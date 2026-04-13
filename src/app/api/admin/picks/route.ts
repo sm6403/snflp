@@ -44,11 +44,75 @@ export async function GET(request: Request) {
     orderBy: { createdAt: "asc" },
   });
 
+  // Games for the Confirm Results UI
+  const games = await prisma.game.findMany({
+    where: { weekId: week.id },
+    include: { homeTeam: true, awayTeam: true, winner: true },
+    orderBy: [{ gameTime: "asc" }, { id: "asc" }],
+  });
+
   // All weeks for the selector dropdown
   const weeks = await prisma.week.findMany({
     orderBy: [{ season: { year: "desc" } }, { number: "asc" }],
     include: { season: { select: { year: true } } },
   });
 
-  return NextResponse.json({ week, pickSets, weeks });
+  return NextResponse.json({ week, pickSets, weeks, games });
+}
+
+export async function PATCH(request: Request) {
+  if (!(await verifyAdminSession())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await request.json() as {
+    action: "lockWeek" | "unlockWeek" | "setLockTime" | "clearLockTime";
+    weekId: string;
+    lockAt?: string; // ISO string (UTC)
+  };
+
+  if (!body.weekId) {
+    return NextResponse.json({ error: "weekId required" }, { status: 400 });
+  }
+
+  if (body.action === "lockWeek") {
+    const week = await prisma.week.update({
+      where: { id: body.weekId },
+      data: { lockedForSubmission: true },
+    });
+    return NextResponse.json({ week });
+  }
+
+  if (body.action === "unlockWeek") {
+    const week = await prisma.week.update({
+      where: { id: body.weekId },
+      data: { lockedForSubmission: false },
+    });
+    return NextResponse.json({ week });
+  }
+
+  if (body.action === "setLockTime") {
+    if (!body.lockAt) {
+      return NextResponse.json({ error: "lockAt required" }, { status: 400 });
+    }
+    const lockAtDate = new Date(body.lockAt);
+    if (isNaN(lockAtDate.getTime())) {
+      return NextResponse.json({ error: "Invalid lockAt date" }, { status: 400 });
+    }
+    const week = await prisma.week.update({
+      where: { id: body.weekId },
+      data: { lockAt: lockAtDate },
+    });
+    return NextResponse.json({ week });
+  }
+
+  if (body.action === "clearLockTime") {
+    const week = await prisma.week.update({
+      where: { id: body.weekId },
+      data: { lockAt: null },
+    });
+    return NextResponse.json({ week });
+  }
+
+  return NextResponse.json({ error: "Unknown action" }, { status: 400 });
 }

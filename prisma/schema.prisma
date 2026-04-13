@@ -33,7 +33,10 @@ model Week {
   seasonId    String
   number      Int
   label       String
-  isCurrent   Boolean      @default(false)
+  isCurrent           Boolean      @default(false)
+  lockedForSubmission Boolean      @default(false)
+  lockAt              DateTime?
+  confirmedAt         DateTime?
   season      Season       @relation(fields: [seasonId], references: [id])
   games       Game[]
   pickSets    PickSet[]
