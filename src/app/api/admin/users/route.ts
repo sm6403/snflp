@@ -55,6 +55,7 @@ export async function POST(request: Request) {
       name,
       email,
       hashedPassword,
+      alias: name ?? null,
       disabled: disabled ?? false,
     },
     select: { id: true, name: true, email: true, disabled: true, lastLoginAt: true, createdAt: true },
