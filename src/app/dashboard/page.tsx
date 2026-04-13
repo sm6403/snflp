@@ -7,6 +7,7 @@ import { FavoriteTeamPicker } from "@/components/favorite-team-picker";
 import { AliasEditor } from "@/components/alias-editor";
 import { WeekHistory } from "@/components/week-history";
 import { UserNav } from "@/components/user-nav";
+import { PositionCharts } from "@/components/position-charts";
 import { getCurrentWeek } from "@/lib/nfl-data";
 
 export default async function DashboardPage() {
@@ -275,10 +276,13 @@ export default async function DashboardPage() {
             )}
 
             {hasAnyStats && (
-              <p className="mt-3 text-xs text-zinc-400 dark:text-zinc-500">
-                Based on {seasonStats.weeksEntered} week{seasonStats.weeksEntered !== 1 ? "s" : ""} entered
-                · {seasonStats.totalGraded} pick{seasonStats.totalGraded !== 1 ? "s" : ""} graded
-              </p>
+              <>
+                <p className="mt-3 text-xs text-zinc-400 dark:text-zinc-500">
+                  Based on {seasonStats.weeksEntered} week{seasonStats.weeksEntered !== 1 ? "s" : ""} entered
+                  · {seasonStats.totalGraded} pick{seasonStats.totalGraded !== 1 ? "s" : ""} graded
+                </p>
+                <PositionCharts />
+              </>
             )}
           </div>
         )}

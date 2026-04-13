@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
+import { verifyAdminSession } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
 
 // GET /api/leaderboard/week/[weekId]
@@ -10,9 +11,11 @@ export async function GET(
   { params }: { params: Promise<{ weekId: string }> }
 ) {
   const session = await auth();
-  if (!session?.user?.id) {
+  const isAdmin = !session?.user?.id && (await verifyAdminSession());
+  if (!session?.user?.id && !isAdmin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const currentUserId = session?.user?.id ?? "";
 
   const { weekId } = await params;
 
@@ -59,7 +62,7 @@ export async function GET(
 
   return NextResponse.json({
     week,
-    currentUserId: session.user.id,
+    currentUserId,
     users: ranked,
   });
 }

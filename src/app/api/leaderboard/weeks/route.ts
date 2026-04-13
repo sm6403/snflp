@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
+import { verifyAdminSession } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
 
 // GET /api/leaderboard/weeks
@@ -7,7 +8,8 @@ import { prisma } from "@/lib/prisma";
 // Most recent week first.
 export async function GET() {
   const session = await auth();
-  if (!session?.user?.id) {
+  const isAdmin = !session?.user?.id && (await verifyAdminSession());
+  if (!session?.user?.id && !isAdmin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

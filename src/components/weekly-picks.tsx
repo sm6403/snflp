@@ -17,12 +17,20 @@ interface Team {
   teamRecords: TeamRecord[];
 }
 
+interface FormEntry {
+  result: "win" | "loss" | "tie" | "bye";
+  weekNumber: number;
+  opponentEspnId?: string;
+  opponentAbbr?: string;
+}
+
 interface Game {
   id: string;
   gameTime: string | null;
   homeTeam: Team;
   awayTeam: Team;
   winner: { id: string } | null;
+  isTie?: boolean;
   isTimeLocked?: boolean;
 }
 
@@ -50,8 +58,54 @@ interface Week {
 
 function recordLabel(records: TeamRecord[]): string {
   const r = records[0];
-  if (!r) return "0-0";
-  return r.ties > 0 ? `${r.wins}-${r.losses}-${r.ties}` : `${r.wins}-${r.losses}`;
+  if (!r) return "0-0-0";
+  return `${r.wins}-${r.losses}-${r.ties}`;
+}
+
+function FormStrip({ form, position }: { form: FormEntry[]; position: "left" | "right" }) {
+  if (!form || form.length === 0) return null;
+  return (
+    <div
+      className={`flex flex-col items-center gap-1.5 self-center flex-shrink-0 ${
+        position === "left" ? "mr-1" : "ml-1"
+      }`}
+    >
+      {form.map((entry, i) => {
+        const weekLabel = `Week ${entry.weekNumber}`;
+        if (entry.result === "bye") {
+          return (
+            <div
+              key={i}
+              title={weekLabel}
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-700"
+            >
+              <span className="text-[7px] font-bold leading-none text-zinc-400">BYE</span>
+            </div>
+          );
+        }
+        const borderColor =
+          entry.result === "win"
+            ? "border-green-500"
+            : entry.result === "loss"
+            ? "border-red-500"
+            : "border-yellow-500";
+        const oppLogoUrl = `https://a.espncdn.com/i/teamlogos/nfl/500/${entry.opponentEspnId}.png`;
+        return (
+          <div
+            key={i}
+            title={weekLabel}
+            className={`h-7 w-7 flex-shrink-0 overflow-hidden rounded-full border-2 bg-zinc-800 ${borderColor}`}
+          >
+            <img
+              src={oppLogoUrl}
+              alt={entry.opponentAbbr ?? ""}
+              className="h-full w-full object-contain p-0.5"
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function TeamButton({
@@ -59,32 +113,42 @@ function TeamButton({
   selected,
   locked,
   isWinner,
+  isTie,
   isCorrectPick,
   isFavoritePreselect,
   isResultsView,
+  recentForm,
+  formPosition,
   onClick,
 }: {
   team: Team;
   selected: boolean;
   locked: boolean;
   isWinner: boolean | null;
+  isTie: boolean;
   isCorrectPick: boolean | null;
   isFavoritePreselect: boolean;
   /** In results view with no user pick, just show winner/loser without pick overlay */
   isResultsView: boolean;
+  recentForm?: FormEntry[];
+  formPosition?: "left" | "right";
   onClick: () => void;
 }) {
   const logoUrl = `https://a.espncdn.com/i/teamlogos/nfl/500/${team.espnId}.png`;
-  const base = "flex flex-1 flex-col items-center gap-2 rounded-xl border-2 p-4 transition-all";
+  const base = "flex flex-1 items-center rounded-xl border-2 p-4 transition-all";
+  const hasResult = isWinner !== null;
 
   let style: string;
 
-  if (isWinner === true) {
+  if (hasResult && isTie) {
+    style = `${base} border-amber-500 bg-amber-500/10`;
+  } else if (isWinner === true) {
     style = `${base} border-green-500 bg-green-500/10`;
+  } else if (isWinner === false && selected) {
+    style = `${base} border-red-500 bg-red-500/10`;
   } else if (isWinner === false) {
     style = `${base} border-zinc-700 bg-zinc-800/40 opacity-40`;
   } else if (isResultsView) {
-    // No result entered yet — show both teams neutrally, non-interactive
     style = `${base} border-zinc-700 bg-zinc-800/60 opacity-60`;
   } else if (locked) {
     style = selected
@@ -98,22 +162,43 @@ function TeamButton({
       : `${base} border-zinc-700 bg-zinc-800 hover:border-zinc-500 cursor-pointer`;
   }
 
-  return (
-    <button className={style} onClick={onClick} disabled={locked || isResultsView} type="button">
+  const mainContent = (
+    <div className="flex flex-1 flex-col items-center gap-2">
       <img src={logoUrl} alt={team.name} className="h-14 w-14 object-contain" />
       <span className="text-sm font-semibold text-zinc-100">{team.abbreviation}</span>
       <span className="text-xs text-zinc-400">{recordLabel(team.teamRecords)}</span>
-      {isWinner === true && (
+
+      {/* Draw result */}
+      {hasResult && isTie && (
+        <span className="text-xs font-semibold text-amber-400">Draw</span>
+      )}
+
+      {/* Normal win/loss result labels */}
+      {!isTie && isWinner === true && (
         <span className="text-xs font-semibold text-green-400">✓ Winner</span>
       )}
+      {!isTie && isCorrectPick === true && selected && (
+        <span className="text-xs font-semibold text-green-400">✓ Correct</span>
+      )}
+      {!isTie && isCorrectPick === false && selected && (
+        <span className="text-xs font-semibold text-red-400">✗ Wrong</span>
+      )}
+
+      {/* Favourite pre-selection indicator (picking phase only) */}
       {selected && isFavoritePreselect && !locked && !isResultsView && (
         <span className="text-xs font-semibold text-yellow-400">⭐ Favourite</span>
       )}
-      {isCorrectPick === true && selected && (
-        <span className="text-xs font-semibold text-green-400">✓ Correct</span>
+    </div>
+  );
+
+  return (
+    <button className={style} onClick={onClick} disabled={locked || isResultsView} type="button">
+      {formPosition === "left" && recentForm && recentForm.length > 0 && (
+        <FormStrip form={recentForm} position="left" />
       )}
-      {isCorrectPick === false && selected && (
-        <span className="text-xs font-semibold text-red-400">✗ Wrong</span>
+      {mainContent}
+      {formPosition === "right" && recentForm && recentForm.length > 0 && (
+        <FormStrip form={recentForm} position="right" />
       )}
     </button>
   );
@@ -131,6 +216,7 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
   const [isViewingOther, setIsViewingOther] = useState(false);
   const [viewingUser, setViewingUser] = useState<{ alias: string | null; name: string | null } | null>(null);
   const [timedAutolocking, setTimedAutolocking] = useState(false);
+  const [teamForm, setTeamForm] = useState<Record<string, FormEntry[]>>({});
 
   // Historical mode = viewing a specific past week via /picks/[weekId]
   const isHistorical = !!weekId;
@@ -155,6 +241,7 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
       setIsViewingOther(!!data.isViewingOther);
       setViewingUser(data.viewingUser ?? null);
       setTimedAutolocking(!!data.timedAutolocking);
+      setTeamForm(data.teamForm ?? {});
 
       if (data.pickSet?.picks) {
         const existing: Record<string, string> = {};
@@ -379,7 +466,7 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
           {games.map((game) => {
             const selectedTeamId = selections[game.id];
             const userPick = pickSet?.picks.find((p) => p.gameId === game.id);
-            const hasResult = game.winner !== null;
+            const hasResult = game.winner !== null || !!game.isTie;
             const isFavGame = favoriteSelections.has(game.id);
 
             // In historical mode with no user pick, show game results without pick overlay
@@ -416,10 +503,13 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
                     team={game.awayTeam}
                     selected={selectedTeamId === game.awayTeam.id}
                     locked={isLocked || weekLockedNoSubmission || gameTimeLocked || false}
-                    isWinner={hasResult ? game.winner?.id === game.awayTeam.id : null}
+                    isWinner={hasResult ? (game.winner?.id === game.awayTeam.id || false) : null}
+                    isTie={hasResult && !!game.isTie}
                     isCorrectPick={userPick?.isCorrect ?? null}
                     isFavoritePreselect={isFavGame && selectedTeamId === game.awayTeam.id}
                     isResultsView={noPickResultsView || withPickResultsView}
+                    recentForm={teamForm[game.awayTeam.id]}
+                    formPosition="right"
                     onClick={() => handleTeamClick(game.id, game.awayTeam.id)}
                   />
                   <div className="flex items-center text-sm font-bold text-zinc-500">@</div>
@@ -427,10 +517,13 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
                     team={game.homeTeam}
                     selected={selectedTeamId === game.homeTeam.id}
                     locked={isLocked || weekLockedNoSubmission || gameTimeLocked || false}
-                    isWinner={hasResult ? game.winner?.id === game.homeTeam.id : null}
+                    isWinner={hasResult ? (game.winner?.id === game.homeTeam.id || false) : null}
+                    isTie={hasResult && !!game.isTie}
                     isCorrectPick={userPick?.isCorrect ?? null}
                     isFavoritePreselect={isFavGame && selectedTeamId === game.homeTeam.id}
                     isResultsView={noPickResultsView || withPickResultsView}
+                    recentForm={teamForm[game.homeTeam.id]}
+                    formPosition="left"
                     onClick={() => handleTeamClick(game.id, game.homeTeam.id)}
                   />
                 </div>

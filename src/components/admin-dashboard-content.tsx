@@ -7,7 +7,6 @@ import { AdminCreateUser } from "./admin-create-user";
 import { AdminHeader } from "./admin-header";
 import { getTeamLogoUrl } from "@/lib/nfl-teams";
 
-
 interface User {
   id: string;
   name: string | null;
@@ -20,9 +19,189 @@ interface User {
   createdAt: string;
 }
 
+interface AdminAccount {
+  id: string;
+  username: string;
+  createdAt: string;
+}
+
+// ─── Admin Accounts section (superadmin only) ────────────────────────────────
+
+function AdminAccountsSection() {
+  const [admins, setAdmins] = useState<AdminAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchAdmins = useCallback(async () => {
+    const res = await fetch("/api/admin/admins");
+    if (res.ok) {
+      const data = await res.json();
+      setAdmins(data.admins ?? []);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchAdmins(); }, [fetchAdmins]);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/admins", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? `Error ${res.status}`);
+      } else {
+        setUsername("");
+        setPassword("");
+        setShowForm(false);
+        fetchAdmins();
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(adminId: string) {
+    setDeletingId(adminId);
+    try {
+      await fetch(`/api/admin/admins/${adminId}`, { method: "DELETE" });
+      fetchAdmins();
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  return (
+    <div className="mt-12">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-zinc-50">Admin Accounts</h2>
+          <p className="mt-0.5 text-sm text-zinc-400">
+            Admins can manage the app but cannot add or remove other admins.
+          </p>
+        </div>
+        {!showForm && (
+          <button
+            onClick={() => setShowForm(true)}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500"
+          >
+            + Add Admin
+          </button>
+        )}
+      </div>
+
+      {/* Create form */}
+      {showForm && (
+        <div className="mb-5 rounded-lg border border-zinc-700 bg-zinc-800/60 p-5">
+          <h3 className="mb-4 text-sm font-semibold text-zinc-100">New Admin Account</h3>
+          <form onSubmit={handleCreate} className="space-y-3">
+            <div className="flex flex-wrap gap-3">
+              <div className="flex-1 min-w-40">
+                <label className="mb-1 block text-xs font-medium text-zinc-400">Username</label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  autoComplete="off"
+                  required
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+              <div className="flex-1 min-w-40">
+                <label className="mb-1 block text-xs font-medium text-zinc-400">
+                  Password <span className="font-normal text-zinc-500">(min. 8 characters)</span>
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+            </div>
+            {error && <p className="text-sm text-red-400">{error}</p>}
+            <div className="flex gap-3 pt-1">
+              <button
+                type="submit"
+                disabled={saving}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+              >
+                {saving ? "Creating…" : "Create Admin"}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowForm(false); setError(null); setUsername(""); setPassword(""); }}
+                className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-400 hover:bg-zinc-700"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-zinc-400">Loading…</p>
+      ) : admins.length === 0 ? (
+        <p className="text-zinc-500">No admin accounts yet.</p>
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-zinc-800">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-zinc-800/50 text-zinc-400">
+              <tr>
+                <th className="px-4 py-3 font-medium">Username</th>
+                <th className="px-4 py-3 font-medium">Created</th>
+                <th className="px-4 py-3 font-medium text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-800">
+              {admins.map((admin) => (
+                <tr key={admin.id} className="text-zinc-300">
+                  <td className="px-4 py-3 font-medium text-zinc-100">{admin.username}</td>
+                  <td className="px-4 py-3 text-zinc-500">
+                    {new Date(admin.createdAt).toLocaleDateString()}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => handleDelete(admin.id)}
+                      disabled={deletingId === admin.id}
+                      className="rounded-md px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-900/20 disabled:opacity-40"
+                    >
+                      {deletingId === admin.id ? "Removing…" : "Remove"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export function AdminDashboardContent() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [togglingLeaderboard, setTogglingLeaderboard] = useState<string | null>(null);
 
   const fetchUsers = useCallback(async () => {
@@ -33,6 +212,15 @@ export function AdminDashboardContent() {
     }
     setLoading(false);
   }, []);
+
+  useEffect(() => {
+    fetchUsers();
+    // Check if current session is superadmin
+    fetch("/api/admin/settings")
+      .then((r) => r.json())
+      .then((d) => setIsSuperAdmin(d.isSuperAdmin ?? false))
+      .catch(() => {});
+  }, [fetchUsers]);
 
   async function handleLeaderboardToggle(userId: string, current: boolean) {
     setTogglingLeaderboard(userId);
@@ -52,20 +240,15 @@ export function AdminDashboardContent() {
     }
   }
 
-  useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
-
   return (
     <div className="min-h-screen bg-zinc-900">
       <AdminHeader active="users" />
 
       <main className="mx-auto max-w-6xl px-6 py-10">
+        {/* ── Regular users ── */}
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-zinc-50">
-              Registered Users
-            </h2>
+            <h2 className="text-xl font-bold text-zinc-50">Registered Users</h2>
             <span className="text-sm text-zinc-400">
               {users.length} user{users.length !== 1 ? "s" : ""}
             </span>
@@ -164,6 +347,9 @@ export function AdminDashboardContent() {
             </table>
           </div>
         )}
+
+        {/* ── Admin accounts (superadmin only) ── */}
+        {isSuperAdmin && <AdminAccountsSection />}
       </main>
     </div>
   );

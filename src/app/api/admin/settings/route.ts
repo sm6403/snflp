@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyAdminSession } from "@/lib/admin-auth";
+import { getAdminRole, verifyAdminSession } from "@/lib/admin-auth";
 
 export async function GET() {
-  if (!(await verifyAdminSession())) {
+  const role = await getAdminRole();
+  if (!role) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const isSuperAdmin = role === "superadmin";
   const settings = await prisma.appSettings.findFirst();
   // Settings page uses seasons for the test-week selector — return all seasons
   // ordered by year desc, type asc so regular comes before postseason per year
@@ -20,7 +22,7 @@ export async function GET() {
     },
   });
 
-  return NextResponse.json({ settings, seasons });
+  return NextResponse.json({ settings, seasons, isSuperAdmin });
 }
 
 export async function PATCH(request: Request) {

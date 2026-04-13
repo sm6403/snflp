@@ -107,6 +107,60 @@ export async function GET(request: Request) {
     });
   }
 
+  // ── Recent form (last ≤3 confirmed weeks before this one) ──────────────────
+  const recentConfirmedWeeks = await prisma.week.findMany({
+    where: {
+      seasonId: week.seasonId,
+      number: { lt: week.number },
+      confirmedAt: { not: null },
+    },
+    orderBy: { number: "desc" },
+    take: 3,
+    include: {
+      games: {
+        select: {
+          homeTeamId: true,
+          awayTeamId: true,
+          winnerId: true,
+          isTie: true,
+          homeTeam: { select: { espnId: true, abbreviation: true } },
+          awayTeam: { select: { espnId: true, abbreviation: true } },
+        },
+      },
+    },
+  });
+
+  type FormEntry = {
+    result: "win" | "loss" | "tie" | "bye";
+    weekNumber: number;
+    opponentEspnId?: string;
+    opponentAbbr?: string;
+  };
+
+  const currentTeamIds = new Set<string>();
+  for (const g of games) {
+    currentTeamIds.add(g.homeTeam.id);
+    currentTeamIds.add(g.awayTeam.id);
+  }
+
+  const teamForm: Record<string, FormEntry[]> = {};
+  for (const teamId of currentTeamIds) {
+    teamForm[teamId] = recentConfirmedWeeks.map((rw) => {
+      const game = rw.games.find(
+        (g) => g.homeTeamId === teamId || g.awayTeamId === teamId
+      );
+      if (!game) return { result: "bye" as const, weekNumber: rw.number };
+      const isHome = game.homeTeamId === teamId;
+      const opponent = isHome ? game.awayTeam : game.homeTeam;
+      let result: "win" | "loss" | "tie";
+      if (game.isTie) result = "tie";
+      else if (game.winnerId === teamId) result = "win";
+      else result = "loss";
+      return { result, weekNumber: rw.number, opponentEspnId: opponent.espnId, opponentAbbr: opponent.abbreviation };
+    });
+  }
+  // ────────────────────────────────────────────────────────────────────────────
+
   return NextResponse.json({
     week,
     games: gamesForResponse,
@@ -115,6 +169,7 @@ export async function GET(request: Request) {
     isViewingOther,
     viewingUser,
     timedAutolocking,
+    teamForm,
   });
 }
 
