@@ -1,8 +1,12 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { authConfig } from "./auth.config";
+
+class AccountDisabledError extends CredentialsSignin {
+  code = "account_disabled";
+}
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
@@ -23,6 +27,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         const isValid = await bcrypt.compare(password, user.hashedPassword);
         if (!isValid) return null;
+
+        if (user.disabled) throw new AccountDisabledError();
+
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { lastLoginAt: new Date() },
+        });
 
         return { id: user.id, name: user.name, email: user.email };
       },

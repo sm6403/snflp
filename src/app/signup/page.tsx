@@ -1,13 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export default function SignUpPage() {
-  const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -31,8 +30,32 @@ export default function SignUpPage() {
     if (!res.ok) {
       setError(data.error || "Something went wrong");
     } else {
-      router.push("/signin");
+      setSuccess(true);
     }
+  }
+
+  if (success) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-zinc-950 px-6">
+        <div className="w-full max-w-sm space-y-6 text-center">
+          <div className="rounded-lg bg-green-50 p-6 dark:bg-green-900/20">
+            <h2 className="text-lg font-semibold text-green-800 dark:text-green-300">
+              Account Created
+            </h2>
+            <p className="mt-2 text-sm text-green-700 dark:text-green-400">
+              Thank you for creating an account. Please inform the site admin to
+              have your account enabled.
+            </p>
+          </div>
+          <Link
+            href="/signin"
+            className="inline-block text-sm font-medium text-zinc-900 hover:underline dark:text-zinc-50"
+          >
+            Back to Sign In
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (
