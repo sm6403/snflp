@@ -16,6 +16,7 @@ export async function GET() {
       alias: true,
       favoriteTeam: true,
       disabled: true,
+      showOnLeaderboard: true,
       lastLoginAt: true,
       createdAt: true,
     },
@@ -67,16 +68,28 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { userId, disabled } = await request.json();
+  const body = await request.json() as {
+    userId?: string;
+    disabled?: boolean;
+    showOnLeaderboard?: boolean;
+  };
 
-  if (!userId || typeof disabled !== "boolean") {
-    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+  if (!body.userId) {
+    return NextResponse.json({ error: "userId required" }, { status: 400 });
+  }
+
+  const updates: { disabled?: boolean; showOnLeaderboard?: boolean } = {};
+  if (typeof body.disabled === "boolean") updates.disabled = body.disabled;
+  if (typeof body.showOnLeaderboard === "boolean") updates.showOnLeaderboard = body.showOnLeaderboard;
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
 
   const user = await prisma.user.update({
-    where: { id: userId },
-    data: { disabled },
-    select: { id: true, name: true, email: true, disabled: true, lastLoginAt: true, createdAt: true },
+    where: { id: body.userId },
+    data: updates,
+    select: { id: true, name: true, email: true, disabled: true, showOnLeaderboard: true, lastLoginAt: true, createdAt: true },
   });
 
   return NextResponse.json({ user });

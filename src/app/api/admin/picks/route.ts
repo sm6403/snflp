@@ -25,24 +25,50 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Week not found" }, { status: 404 });
   }
 
-  const pickSets = await prisma.pickSet.findMany({
-    where: { weekId: week.id },
-    include: {
-      user: { select: { id: true, name: true, email: true, alias: true } },
-      picks: {
-        include: {
-          pickedTeam: true,
-          game: {
-            include: {
-              homeTeam: true,
-              awayTeam: true,
-            },
+  // Server-side auto-lock: if lockAt has passed and week isn't locked yet, lock it now
+  if (week.lockAt && !week.lockedForSubmission && new Date(week.lockAt) <= new Date()) {
+    week = await prisma.week.update({
+      where: { id: week.id },
+      data: { lockedForSubmission: true },
+      include: { season: true },
+    });
+  }
+
+  const [submittedPickSets, eligibleUsers] = await Promise.all([
+    prisma.pickSet.findMany({
+      where: { weekId: week.id },
+      include: {
+        user: { select: { id: true, name: true, email: true, alias: true } },
+        picks: {
+          include: {
+            pickedTeam: true,
+            game: { include: { homeTeam: true, awayTeam: true } },
           },
         },
       },
-    },
-    orderBy: { createdAt: "asc" },
-  });
+      orderBy: { submittedAt: "desc" },
+    }),
+    prisma.user.findMany({
+      where: { showOnLeaderboard: true },
+      select: { id: true, name: true, email: true, alias: true },
+      orderBy: { alias: "asc" },
+    }),
+  ]);
+
+  // Build combined list: submitted users first, then eligible users who haven't submitted
+  const submittedUserIds = new Set(submittedPickSets.map((ps) => ps.userId));
+  const pendingPickSets = eligibleUsers
+    .filter((u) => !submittedUserIds.has(u.id))
+    .map((u) => ({
+      id: `pending-${u.id}`,
+      submittedAt: null,
+      lockedAt: null,
+      lockedBy: null,
+      user: u,
+      picks: [] as typeof submittedPickSets[0]["picks"],
+    }));
+
+  const pickSets = [...submittedPickSets, ...pendingPickSets];
 
   // Games for the Confirm Results UI
   const games = await prisma.game.findMany({
@@ -54,7 +80,7 @@ export async function GET(request: Request) {
   // All weeks for the selector dropdown
   const weeks = await prisma.week.findMany({
     orderBy: [{ season: { year: "desc" } }, { number: "asc" }],
-    include: { season: { select: { year: true } } },
+    include: { season: { select: { id: true, year: true } } },
   });
 
   return NextResponse.json({ week, pickSets, weeks, games });
@@ -84,9 +110,10 @@ export async function PATCH(request: Request) {
   }
 
   if (body.action === "unlockWeek") {
+    // Also clear lockAt so the auto-lock cron doesn't immediately re-lock the week
     const week = await prisma.week.update({
       where: { id: body.weekId },
-      data: { lockedForSubmission: false },
+      data: { lockedForSubmission: false, lockAt: null },
     });
     return NextResponse.json({ week });
   }

@@ -15,6 +15,7 @@ interface User {
   alias: string | null;
   favoriteTeam: string;
   disabled: boolean;
+  showOnLeaderboard: boolean;
   lastLoginAt: string | null;
   createdAt: string;
 }
@@ -22,6 +23,7 @@ interface User {
 export function AdminDashboardContent() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [togglingLeaderboard, setTogglingLeaderboard] = useState<string | null>(null);
 
   const fetchUsers = useCallback(async () => {
     const res = await fetch("/api/admin/users");
@@ -31,6 +33,24 @@ export function AdminDashboardContent() {
     }
     setLoading(false);
   }, []);
+
+  async function handleLeaderboardToggle(userId: string, current: boolean) {
+    setTogglingLeaderboard(userId);
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, showOnLeaderboard: !current }),
+      });
+      if (res.ok) {
+        setUsers((prev) =>
+          prev.map((u) => u.id === userId ? { ...u, showOnLeaderboard: !current } : u)
+        );
+      }
+    } finally {
+      setTogglingLeaderboard(null);
+    }
+  }
 
   useEffect(() => {
     fetchUsers();
@@ -67,6 +87,7 @@ export function AdminDashboardContent() {
                   <th className="px-4 py-3 font-medium">Email</th>
                   <th className="px-4 py-3 font-medium">Team</th>
                   <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Leaderboard</th>
                   <th className="px-4 py-3 font-medium">Last Login</th>
                   <th className="px-4 py-3 font-medium">Created</th>
                   <th className="px-4 py-3 font-medium">Actions</th>
@@ -98,6 +119,22 @@ export function AdminDashboardContent() {
                       >
                         {user.disabled ? "Disabled" : "Active"}
                       </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => handleLeaderboardToggle(user.id, user.showOnLeaderboard)}
+                        disabled={togglingLeaderboard === user.id}
+                        title={user.showOnLeaderboard ? "Visible on leaderboard — click to hide" : "Hidden from leaderboard — click to show"}
+                        className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                          user.showOnLeaderboard ? "bg-indigo-600" : "bg-zinc-600"
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                            user.showOnLeaderboard ? "translate-x-4" : "translate-x-0.5"
+                          }`}
+                        />
+                      </button>
                     </td>
                     <td className="px-4 py-3 text-zinc-500">
                       {user.lastLoginAt

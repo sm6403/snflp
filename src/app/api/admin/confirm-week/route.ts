@@ -18,7 +18,7 @@ export async function POST(request: Request) {
 
   const week = await prisma.week.findUnique({
     where: { id: weekId },
-    include: { games: { select: { id: true, winnerId: true } } },
+    include: { games: { select: { id: true, winnerId: true, isTie: true } } },
   });
   if (!week) {
     return NextResponse.json({ error: "Week not found" }, { status: 404 });
@@ -30,11 +30,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const gamesWithoutWinner = week.games.filter((g) => g.winnerId === null);
+  // A game is "resolved" if it has a winner OR is marked as a tie
+  const gamesWithoutWinner = week.games.filter((g) => g.winnerId === null && !g.isTie);
   if (gamesWithoutWinner.length > 0) {
     return NextResponse.json(
       {
-        error: `${gamesWithoutWinner.length} game${gamesWithoutWinner.length !== 1 ? "s" : ""} still need a winner set`,
+        error: `${gamesWithoutWinner.length} game${gamesWithoutWinner.length !== 1 ? "s" : ""} still need a winner (or tie) set`,
       },
       { status: 400 }
     );
@@ -44,22 +45,32 @@ export async function POST(request: Request) {
 
   await prisma.$transaction(async (tx) => {
     for (const game of week.games) {
-      const winnerId = game.winnerId!;
-
       // First reset any existing grades for this game (handles re-confirmation)
       await tx.pick.updateMany({
         where: { gameId: game.id },
         data: { isCorrect: null },
       });
 
+      if (game.isTie) {
+        // Tied game: no picks are graded — isCorrect stays null (neither right nor wrong)
+        continue;
+      }
+
+      const winnerId = game.winnerId!;
+
       // Correct picks
       const correct = await tx.pick.updateMany({
         where: { gameId: game.id, pickedTeamId: winnerId },
         data: { isCorrect: true },
       });
-      // Wrong picks
+      // Wrong picks (has a pick but it's the losing team)
       await tx.pick.updateMany({
-        where: { gameId: game.id, NOT: { pickedTeamId: winnerId } },
+        where: { gameId: game.id, NOT: { pickedTeamId: winnerId }, pickedTeamId: { not: null } },
+        data: { isCorrect: false },
+      });
+      // Missed picks (null pickedTeamId — time-locked game with no selection)
+      await tx.pick.updateMany({
+        where: { gameId: game.id, pickedTeamId: null },
         data: { isCorrect: false },
       });
 

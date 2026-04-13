@@ -7,25 +7,34 @@ datasource db {
 }
 
 model User {
-  id             String    @id @default(cuid())
-  name           String?
-  email          String    @unique
-  hashedPassword String
-  alias          String?
-  favoriteTeam   String    @default("Los Angeles Rams")
-  disabled       Boolean   @default(true)
-  lastLoginAt    DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  pickSets       PickSet[]
+  id                String    @id @default(cuid())
+  name              String?
+  email             String    @unique
+  hashedPassword    String
+  alias             String?
+  favoriteTeam      String    @default("Los Angeles Rams")
+  disabled          Boolean   @default(true)
+  showOnLeaderboard Boolean   @default(true)
+  lastLoginAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  pickSets          PickSet[]
 }
 
 model Season {
-  id        String   @id @default(cuid())
-  year      Int      @unique
-  isCurrent Boolean  @default(false)
-  weeks     Week[]
-  createdAt DateTime @default(now())
+  id               String   @id @default(cuid())
+  year             Int
+  type             String   @default("regular")    // "regular" | "postseason"
+  mode             String   @default("live")        // "live" | "test"
+  isCurrent        Boolean  @default(false)
+  timedAutolocking Boolean  @default(false)
+  parentSeasonId   String?
+  parentSeason     Season?  @relation("PostSeason", fields: [parentSeasonId], references: [id])
+  childSeasons     Season[] @relation("PostSeason")
+  weeks            Week[]
+  createdAt        DateTime @default(now())
+
+  @@unique([year, type])
 }
 
 model Week {
@@ -78,6 +87,7 @@ model Game {
   homeTeamId String
   awayTeamId String
   winnerId   String?
+  isTie      Boolean   @default(false)
   gameTime   DateTime?
   week       Week      @relation(fields: [weekId], references: [id])
   homeTeam   Team      @relation("HomeTeam", fields: [homeTeamId], references: [id])
@@ -107,12 +117,12 @@ model Pick {
   id           String   @id @default(cuid())
   pickSetId    String
   gameId       String
-  pickedTeamId String
+  pickedTeamId String?  // null = missed pick (time-locked game, no selection made)
   isCorrect    Boolean?
   editedBy     String?
   pickSet      PickSet  @relation(fields: [pickSetId], references: [id])
   game         Game     @relation(fields: [gameId], references: [id])
-  pickedTeam   Team     @relation(fields: [pickedTeamId], references: [id])
+  pickedTeam   Team?    @relation(fields: [pickedTeamId], references: [id])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

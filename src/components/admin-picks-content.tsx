@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AdminHeader } from "./admin-header";
 
 interface Team {
@@ -16,6 +17,7 @@ interface Game {
   awayTeam: Team;
   gameTime: string | null;
   winner: Team | null;
+  isTie: boolean;
 }
 
 interface Pick {
@@ -40,7 +42,7 @@ interface WeekOption {
   id: string;
   number: number;
   label: string;
-  season: { year: number };
+  season: { id: string; year: number };
 }
 
 interface Week {
@@ -50,7 +52,7 @@ interface Week {
   lockedForSubmission: boolean;
   lockAt: string | null;
   confirmedAt: string | null;
-  season: { year: number };
+  season: { id: string; year: number };
 }
 
 // ─── Status badge ────────────────────────────────────────────────────────────
@@ -254,17 +256,22 @@ function ConfirmResults({
   games: initialGames,
   weekId,
   confirmedAt,
+  nextWeekId,
+  nextWeekLabel,
   onConfirmed,
 }: {
   games: Game[];
   weekId: string;
   confirmedAt: string | null;
-  onConfirmed: () => void;
+  nextWeekId: string | null;
+  nextWeekLabel: string | null;
+  onConfirmed: (advancedToWeekId?: string) => void;
 }) {
   const [open, setOpen] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [advanceToNext, setAdvanceToNext] = useState(false);
   // Keep a local copy so setting a winner updates in-place without re-ordering
   const [games, setGames] = useState<Game[]>(initialGames);
 
@@ -282,37 +289,66 @@ function ConfirmResults({
     const res = await fetch(`/api/admin/games/${gameId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ winnerId }),
+      body: JSON.stringify({ winnerId, isTie: false }),
     });
     if (res.ok) {
       const data = await res.json();
-      // Update just this game locally — no re-order
       setGames((gs) =>
-        gs.map((g) => (g.id === gameId ? { ...g, winner: data.game.winner } : g))
+        gs.map((g) => (g.id === gameId ? { ...g, winner: data.game.winner, isTie: false } : g))
       );
     }
     setSaving(null);
-    // No longer call onResultSet per-game — picks are graded in bulk on confirm
+  }
+
+  async function handleSetTie(gameId: string, currentlyTie: boolean) {
+    setSaving(gameId);
+    const res = await fetch(`/api/admin/games/${gameId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ winnerId: null, isTie: !currentlyTie }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setGames((gs) =>
+        gs.map((g) => (g.id === gameId ? { ...g, winner: null, isTie: data.game.isTie } : g))
+      );
+    }
+    setSaving(null);
   }
 
   async function handleConfirmAll() {
     setConfirming(true);
     setConfirmError(null);
-    const res = await fetch("/api/admin/confirm-week", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ weekId }),
-    });
-    if (res.ok) {
-      onConfirmed();
-    } else {
-      const data = await res.json();
-      setConfirmError(data.error ?? "Failed to confirm results");
+    try {
+      const res = await fetch("/api/admin/confirm-week", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weekId }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setConfirmError(data.error ?? "Failed to confirm results");
+        return;
+      }
+      // Advance to next week if requested
+      if (advanceToNext && nextWeekId) {
+        await fetch(`/api/admin/weeks/${nextWeekId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isCurrent: true }),
+        });
+        onConfirmed(nextWeekId);
+      } else {
+        onConfirmed();
+      }
+    } catch {
+      setConfirmError("Network error — please try again");
+    } finally {
+      setConfirming(false);
     }
-    setConfirming(false);
   }
 
-  const winnersEntered = games.filter((g) => g.winner !== null).length;
+  const winnersEntered = games.filter((g) => g.winner !== null || g.isTie).length;
   const allGamesHaveWinners = games.length > 0 && winnersEntered === games.length;
 
   return (
@@ -340,20 +376,18 @@ function ConfirmResults({
         <div className="border-t border-indigo-800/50 px-5 pb-5 pt-4 space-y-3">
           {games.map((game) => {
             const isSaving = saving === game.id;
+            const awayWon = game.winner?.id === game.awayTeam.id;
+            const homeWon = game.winner?.id === game.homeTeam.id;
+            const resolved = awayWon || homeWon || game.isTie;
             return (
-              <div key={game.id} className="flex items-center gap-3">
+              <div key={game.id} className="flex items-center gap-2">
                 <div className="flex flex-1 gap-2">
                   {/* Away team */}
                   <button
-                    onClick={() =>
-                      handleSetWinner(
-                        game.id,
-                        game.winner?.id === game.awayTeam.id ? null : game.awayTeam.id
-                      )
-                    }
+                    onClick={() => handleSetWinner(game.id, awayWon ? null : game.awayTeam.id)}
                     disabled={isSaving}
                     className={`flex flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all disabled:opacity-50 ${
-                      game.winner?.id === game.awayTeam.id
+                      awayWon
                         ? "border-green-500 bg-green-500/20 text-green-300"
                         : "border-zinc-700 bg-zinc-800 text-zinc-300 hover:border-zinc-500"
                     }`}
@@ -364,24 +398,17 @@ function ConfirmResults({
                       className="h-6 w-6 object-contain"
                     />
                     {game.awayTeam.abbreviation}
-                    {game.winner?.id === game.awayTeam.id && (
-                      <span className="ml-auto text-green-400">✓</span>
-                    )}
+                    {awayWon && <span className="ml-auto text-green-400">✓</span>}
                   </button>
 
                   <span className="flex items-center text-xs text-zinc-500 px-1">@</span>
 
                   {/* Home team */}
                   <button
-                    onClick={() =>
-                      handleSetWinner(
-                        game.id,
-                        game.winner?.id === game.homeTeam.id ? null : game.homeTeam.id
-                      )
-                    }
+                    onClick={() => handleSetWinner(game.id, homeWon ? null : game.homeTeam.id)}
                     disabled={isSaving}
                     className={`flex flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all disabled:opacity-50 ${
-                      game.winner?.id === game.homeTeam.id
+                      homeWon
                         ? "border-green-500 bg-green-500/20 text-green-300"
                         : "border-zinc-700 bg-zinc-800 text-zinc-300 hover:border-zinc-500"
                     }`}
@@ -392,15 +419,30 @@ function ConfirmResults({
                       className="h-6 w-6 object-contain"
                     />
                     {game.homeTeam.abbreviation}
-                    {game.winner?.id === game.homeTeam.id && (
-                      <span className="ml-auto text-green-400">✓</span>
-                    )}
+                    {homeWon && <span className="ml-auto text-green-400">✓</span>}
+                  </button>
+
+                  {/* TIE button */}
+                  <button
+                    onClick={() => handleSetTie(game.id, game.isTie)}
+                    disabled={isSaving}
+                    className={`flex items-center rounded-lg border px-3 py-2 text-xs font-bold transition-all disabled:opacity-50 ${
+                      game.isTie
+                        ? "border-amber-500 bg-amber-500/20 text-amber-300"
+                        : "border-zinc-700 bg-zinc-800 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300"
+                    }`}
+                    title="Mark as tie — picks for this game won't be scored"
+                  >
+                    TIE
                   </button>
                 </div>
 
-                {game.winner && (
+                {resolved && (
                   <button
-                    onClick={() => handleSetWinner(game.id, null)}
+                    onClick={() => {
+                      if (game.isTie) handleSetTie(game.id, true);
+                      else handleSetWinner(game.id, null);
+                    }}
                     disabled={isSaving}
                     className="text-xs text-zinc-600 hover:text-zinc-400 disabled:opacity-40"
                     title="Clear result"
@@ -413,10 +455,27 @@ function ConfirmResults({
           })}
 
           {/* Confirm All Results button */}
-          <div className="mt-4 border-t border-indigo-800/30 pt-4">
+          <div className="mt-4 border-t border-indigo-800/30 pt-4 space-y-3">
             {confirmError && (
-              <p className="mb-3 text-sm text-red-400">{confirmError}</p>
+              <p className="text-sm text-red-400">{confirmError}</p>
             )}
+
+            {/* Advance to next week option */}
+            {nextWeekId && (
+              <label className="flex cursor-pointer items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={advanceToNext}
+                  onChange={(e) => setAdvanceToNext(e.target.checked)}
+                  className="h-4 w-4 accent-indigo-500"
+                />
+                <span className="text-sm text-zinc-300">
+                  Also advance current week to{" "}
+                  <span className="font-semibold text-indigo-300">{nextWeekLabel}</span>
+                </span>
+              </label>
+            )}
+
             <div className="flex items-center gap-4">
               <button
                 onClick={handleConfirmAll}
@@ -428,7 +487,7 @@ function ConfirmResults({
                 }`}
               >
                 {confirming
-                  ? "Publishing…"
+                  ? advanceToNext && nextWeekId ? "Publishing & Advancing…" : "Publishing…"
                   : confirmedAt
                   ? "Re-Publish Results"
                   : "Publish All Results"}
@@ -490,38 +549,52 @@ function LockTimeControl({
     if (!inputValue) return;
     setSaving(true);
     setError(null);
-    // Treat the input as UTC
-    const lockAtUtc = new Date(inputValue + "Z").toISOString();
-    const res = await fetch("/api/admin/picks", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "setLockTime", weekId, lockAt: lockAtUtc }),
-    });
-    if (res.ok) {
-      onUpdate(lockAtUtc);
-    } else {
-      const d = await res.json();
-      setError(d.error ?? "Failed to set lock time");
+    try {
+      // Treat the input as UTC by appending Z
+      const lockAtUtc = new Date(inputValue + "Z").toISOString();
+      if (isNaN(new Date(lockAtUtc).getTime())) {
+        setError("Invalid date/time");
+        return;
+      }
+      const res = await fetch("/api/admin/picks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "setLockTime", weekId, lockAt: lockAtUtc }),
+      });
+      if (res.ok) {
+        onUpdate(lockAtUtc);
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setError(d.error ?? `Server error (${res.status})`);
+      }
+    } catch {
+      setError("Network error — please try again");
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   }
 
   async function handleClear() {
     setSaving(true);
     setError(null);
-    const res = await fetch("/api/admin/picks", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "clearLockTime", weekId }),
-    });
-    if (res.ok) {
-      setInputValue("");
-      onUpdate(null);
-    } else {
-      const d = await res.json();
-      setError(d.error ?? "Failed to clear lock time");
+    try {
+      const res = await fetch("/api/admin/picks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "clearLockTime", weekId }),
+      });
+      if (res.ok) {
+        setInputValue("");
+        onUpdate(null);
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setError(d.error ?? `Server error (${res.status})`);
+      }
+    } catch {
+      setError("Network error — please try again");
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   }
 
   // Countdown helper
@@ -608,11 +681,14 @@ function LockTimeControl({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function AdminPicksContent() {
+  const searchParams = useSearchParams();
+  const urlWeekId = searchParams.get("weekId");
+
   const [week, setWeek] = useState<Week | null>(null);
   const [pickSets, setPickSets] = useState<PickSet[]>([]);
   const [games, setGames] = useState<Game[]>([]);
   const [weeks, setWeeks] = useState<WeekOption[]>([]);
-  const [selectedWeekId, setSelectedWeekId] = useState<string>("");
+  const [selectedWeekId, setSelectedWeekId] = useState<string>(urlWeekId ?? "");
   const [loading, setLoading] = useState(true);
   const [weekActionLoading, setWeekActionLoading] = useState(false);
 
@@ -635,7 +711,7 @@ export function AdminPicksContent() {
   }, []);
 
   useEffect(() => {
-    fetchPicks();
+    fetchPicks(urlWeekId ?? undefined);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -664,7 +740,18 @@ export function AdminPicksContent() {
     setWeek((w) => w ? { ...w, lockAt: newLockAt } : w);
   }
 
-  const refresh = () => fetchPicks(selectedWeekId || undefined);
+  const refresh = (advancedToWeekId?: string) => {
+    if (advancedToWeekId) {
+      handleWeekChange(advancedToWeekId);
+    } else {
+      fetchPicks(selectedWeekId || undefined);
+    }
+  };
+
+  // Find the week that immediately follows the current one in the same season
+  const nextWeek = week
+    ? weeks.find((w) => w.season.id === week.season.id && w.number === week.number + 1) ?? null
+    : null;
 
   return (
     <div className="min-h-screen bg-zinc-900">
@@ -753,6 +840,8 @@ export function AdminPicksContent() {
                 games={games}
                 weekId={week.id}
                 confirmedAt={week.confirmedAt}
+                nextWeekId={nextWeek?.id ?? null}
+                nextWeekLabel={nextWeek?.label ?? null}
                 onConfirmed={refresh}
               />
             )}

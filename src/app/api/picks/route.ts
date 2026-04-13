@@ -27,6 +27,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "No active week found" }, { status: 404 });
   }
 
+  // Server-side auto-lock: if lockAt has passed and week isn't locked yet, lock it now
+  if (week.lockAt && !week.lockedForSubmission && new Date(week.lockAt) <= new Date()) {
+    week = await prisma.week.update({
+      where: { id: week.id },
+      data: { lockedForSubmission: true },
+      include: { season: true },
+    });
+  }
+
   // Determine which user's picks to return
   const isViewingOther =
     !!userIdParam &&
@@ -44,10 +53,25 @@ export async function GET(request: Request) {
 
   const games = await getGamesForWeek(week.id);
 
-  // Mask winners from users until the week is officially confirmed
+  // Determine if timed autolocking is enabled for this season
+  const season = await prisma.season.findUnique({
+    where: { id: week.seasonId },
+    select: { timedAutolocking: true },
+  });
+  const timedAutolocking = season?.timedAutolocking ?? false;
+
+  // Compute per-game isTimeLocked: locked when gameTime ≤ 1 min from now
+  const now = new Date();
   const gamesForResponse = week.confirmedAt
     ? games
-    : games.map((g) => ({ ...g, winner: null, winnerId: null }));
+    : games.map((g) => ({
+        ...g,
+        winner: null,
+        winnerId: null,
+        isTimeLocked: timedAutolocking
+          ? g.gameTime != null && new Date(g.gameTime).getTime() - now.getTime() < 60_000
+          : false,
+      }));
 
   const pickSet = await prisma.pickSet.findUnique({
     where: { userId_weekId: { userId: targetUserId, weekId: week.id } },
@@ -90,6 +114,7 @@ export async function GET(request: Request) {
     favoriteTeamId,
     isViewingOther,
     viewingUser,
+    timedAutolocking,
   });
 }
 
@@ -128,9 +153,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Picks are locked" }, { status: 409 });
   }
 
+  // Fetch season to check timed autolocking
+  const weekSeason = await prisma.season.findUnique({
+    where: { id: week.seasonId },
+    select: { timedAutolocking: true },
+  });
+  const timedAutolock = weekSeason?.timedAutolocking ?? false;
+
   // Validate: one pick per game, and picked team must be in that game
   const games = await getGamesForWeek(week.id);
-  if (picks.length !== games.length) {
+  const postNow = new Date();
+
+  // Determine which games are time-locked
+  const timeLockedGameIds = timedAutolock
+    ? new Set(
+        games
+          .filter((g) => g.gameTime != null && new Date(g.gameTime).getTime() - postNow.getTime() < 60_000)
+          .map((g) => g.id)
+      )
+    : new Set<string>();
+
+  const pickableGames = games.filter((g) => !timeLockedGameIds.has(g.id));
+
+  // When timed autolocking: only require picks for non-locked games
+  if (!timedAutolock && picks.length !== games.length) {
     return NextResponse.json(
       { error: `Expected ${games.length} picks, got ${picks.length}` },
       { status: 400 }
@@ -143,6 +189,12 @@ export async function POST(request: Request) {
     if (!game) {
       return NextResponse.json({ error: `Unknown game: ${pick.gameId}` }, { status: 400 });
     }
+    if (timeLockedGameIds.has(pick.gameId)) {
+      return NextResponse.json(
+        { error: `Game ${pick.gameId} is time-locked and cannot be changed` },
+        { status: 400 }
+      );
+    }
     if (pick.pickedTeamId !== game.homeTeamId && pick.pickedTeamId !== game.awayTeamId) {
       return NextResponse.json(
         { error: `Invalid team for game ${pick.gameId}` },
@@ -151,18 +203,33 @@ export async function POST(request: Request) {
     }
   }
 
-  const now = new Date();
+  // When timed autolocking, require picks for all non-locked games
+  if (timedAutolock && picks.length !== pickableGames.length) {
+    return NextResponse.json(
+      { error: `Expected ${pickableGames.length} picks (excluding ${timeLockedGameIds.size} locked games), got ${picks.length}` },
+      { status: 400 }
+    );
+  }
+
   const userId = session.user.id;
   const weekId = week.id;
 
   const pickSet = await prisma.$transaction(async (tx) => {
     const ps = await tx.pickSet.upsert({
       where: { userId_weekId: { userId, weekId } },
-      create: { userId, weekId, submittedAt: now, lockedAt: now, lockedBy: "user" },
-      update: { submittedAt: now, lockedAt: now, lockedBy: "user" },
+      create: { userId, weekId, submittedAt: postNow, lockedAt: postNow, lockedBy: "user" },
+      update: { submittedAt: postNow, lockedAt: postNow, lockedBy: "user" },
     });
 
-    await tx.pick.deleteMany({ where: { pickSetId: ps.id } });
+    // Delete only non-time-locked picks (preserve existing picks for locked games)
+    await tx.pick.deleteMany({
+      where: {
+        pickSetId: ps.id,
+        gameId: { notIn: [...timeLockedGameIds] },
+      },
+    });
+
+    // Insert picks for non-locked games
     await tx.pick.createMany({
       data: picks.map((p) => ({
         pickSetId: ps.id,
@@ -170,6 +237,25 @@ export async function POST(request: Request) {
         pickedTeamId: p.pickedTeamId,
       })),
     });
+
+    // If timed autolocking: insert null picks for locked games not yet recorded
+    if (timedAutolock && timeLockedGameIds.size > 0) {
+      const existingLockedPicks = await tx.pick.findMany({
+        where: { pickSetId: ps.id, gameId: { in: [...timeLockedGameIds] } },
+        select: { gameId: true },
+      });
+      const existingLockedGameIds = new Set(existingLockedPicks.map((p) => p.gameId));
+      const missingLockedGames = [...timeLockedGameIds].filter((id) => !existingLockedGameIds.has(id));
+      if (missingLockedGames.length > 0) {
+        await tx.pick.createMany({
+          data: missingLockedGames.map((gameId) => ({
+            pickSetId: ps.id,
+            gameId,
+            pickedTeamId: null,
+          })),
+        });
+      }
+    }
 
     return ps;
   });

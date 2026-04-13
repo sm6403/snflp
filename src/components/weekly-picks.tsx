@@ -23,6 +23,7 @@ interface Game {
   homeTeam: Team;
   awayTeam: Team;
   winner: { id: string } | null;
+  isTimeLocked?: boolean;
 }
 
 interface Pick {
@@ -129,6 +130,7 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
   const [error, setError] = useState<string | null>(null);
   const [isViewingOther, setIsViewingOther] = useState(false);
   const [viewingUser, setViewingUser] = useState<{ alias: string | null; name: string | null } | null>(null);
+  const [timedAutolocking, setTimedAutolocking] = useState(false);
 
   // Historical mode = viewing a specific past week via /picks/[weekId]
   const isHistorical = !!weekId;
@@ -152,6 +154,7 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
       setPickSet(data.pickSet ?? null);
       setIsViewingOther(!!data.isViewingOther);
       setViewingUser(data.viewingUser ?? null);
+      setTimedAutolocking(!!data.timedAutolocking);
 
       if (data.pickSet?.picks) {
         const existing: Record<string, string> = {};
@@ -221,7 +224,9 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
   }
 
   const isLocked = !!pickSet?.lockedAt;
-  const allPicked = games.length > 0 && Object.keys(selections).length === games.length;
+  const timeLockedGames = games.filter((g) => !!g.isTimeLocked);
+  const pickableGames = games.filter((g) => !g.isTimeLocked);
+  const allPicked = pickableGames.length > 0 && pickableGames.every((g) => !!selections[g.id]);
   const weekLockedNoSubmission = week?.lockedForSubmission && !pickSet;
 
   // Results data
@@ -383,24 +388,34 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
             const noPickResultsView = isHistorical && !userPick && !hasResult;
             const withPickResultsView = isHistorical && !userPick && hasResult;
 
+            const gameTimeLocked = !!game.isTimeLocked;
+
             return (
-              <div key={game.id} className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-                {game.gameTime && (
-                  <p className="mb-3 text-center text-xs text-zinc-500">
-                    {new Date(game.gameTime).toLocaleString(undefined, {
-                      weekday: "short",
-                      month: "short",
-                      day: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
-                  </p>
-                )}
+              <div key={game.id} className={`rounded-xl border p-4 ${gameTimeLocked ? "border-amber-800/50 bg-zinc-900" : "border-zinc-800 bg-zinc-900"}`}>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  {game.gameTime ? (
+                    <p className="text-xs text-zinc-500">
+                      {new Date(game.gameTime).toLocaleString(undefined, {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                  ) : <span />}
+                  {gameTimeLocked && !isHistorical && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-600/20 px-2 py-0.5 text-xs font-semibold text-amber-400">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                      ⏰ Started
+                    </span>
+                  )}
+                </div>
                 <div className="flex gap-3">
                   <TeamButton
                     team={game.awayTeam}
                     selected={selectedTeamId === game.awayTeam.id}
-                    locked={isLocked || weekLockedNoSubmission || false}
+                    locked={isLocked || weekLockedNoSubmission || gameTimeLocked || false}
                     isWinner={hasResult ? game.winner?.id === game.awayTeam.id : null}
                     isCorrectPick={userPick?.isCorrect ?? null}
                     isFavoritePreselect={isFavGame && selectedTeamId === game.awayTeam.id}
@@ -411,7 +426,7 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
                   <TeamButton
                     team={game.homeTeam}
                     selected={selectedTeamId === game.homeTeam.id}
-                    locked={isLocked || weekLockedNoSubmission || false}
+                    locked={isLocked || weekLockedNoSubmission || gameTimeLocked || false}
                     isWinner={hasResult ? game.winner?.id === game.homeTeam.id : null}
                     isCorrectPick={userPick?.isCorrect ?? null}
                     isFavoritePreselect={isFavGame && selectedTeamId === game.homeTeam.id}
@@ -427,6 +442,11 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
         {/* Submit — current week only, not historical or viewing other user */}
         {!isHistorical && !isViewingOther && !isLocked && !weekLockedNoSubmission && (
           <div className="mt-8 flex flex-col items-center gap-2">
+            {timedAutolocking && timeLockedGames.length > 0 && (
+              <p className="text-xs text-amber-500">
+                {timeLockedGames.length} game{timeLockedGames.length !== 1 ? "s have" : " has"} already started and cannot be picked.
+              </p>
+            )}
             <button
               onClick={handleSubmit}
               disabled={!allPicked || submitting}
@@ -436,8 +456,8 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
             </button>
             {!allPicked && (
               <p className="text-xs text-zinc-500">
-                {games.length - Object.keys(selections).length} game
-                {games.length - Object.keys(selections).length !== 1 ? "s" : ""} remaining
+                {pickableGames.length - pickableGames.filter((g) => !!selections[g.id]).length} game
+                {pickableGames.length - pickableGames.filter((g) => !!selections[g.id]).length !== 1 ? "s" : ""} remaining
               </p>
             )}
           </div>

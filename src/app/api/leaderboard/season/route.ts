@@ -37,9 +37,9 @@ export async function GET() {
   const allConfirmedWeekIds = confirmedWeeks.map((w) => w.id);
   const previousWeekIds = allConfirmedWeekIds.slice(1); // all except most recent
 
-  // Fetch all users (non-disabled)
+  // Fetch all users who are active and visible on the leaderboard
   const users = await prisma.user.findMany({
-    where: { disabled: false },
+    where: { disabled: false, showOnLeaderboard: true },
     select: { id: true, name: true, alias: true, email: true },
   });
 
