@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { LeaderboardMultiChart, type ChartSeries } from "@/components/leaderboard-chart";
 
 interface WeekOption {
   id: string;
@@ -25,7 +26,17 @@ interface WeekData {
   users: WeekUser[];
 }
 
-export function WeeklyLeaderboard({ userId }: { userId: string }) {
+export function WeeklyLeaderboard({
+  userId,
+  chartWeeks,
+  chartSeries,
+  totalPlayers,
+}: {
+  userId: string;
+  chartWeeks: Array<{ weekNumber: number; weekLabel: string }>;
+  chartSeries: ChartSeries[];
+  totalPlayers: number;
+}) {
   const router = useRouter();
   const [weeks, setWeeks] = useState<WeekOption[]>([]);
   const [selectedWeekId, setSelectedWeekId] = useState<string | null>(null);
@@ -189,6 +200,16 @@ export function WeeklyLeaderboard({ userId }: { userId: string }) {
             No submissions found for this week.
           </p>
         )
+      )}
+
+      {/* Weekly position history chart (all confirmed weeks, independent of selector) */}
+      {chartSeries.length > 0 && chartWeeks.length > 0 && (
+        <LeaderboardMultiChart
+          weeks={chartWeeks}
+          series={chartSeries}
+          currentUserId={userId}
+          maxY={totalPlayers}
+        />
       )}
     </div>
   );

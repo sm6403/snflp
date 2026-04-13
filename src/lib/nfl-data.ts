@@ -17,14 +17,38 @@ export async function getCurrentWeek() {
 }
 
 export async function getGamesForWeek(weekId: string) {
+  // Resolve the season so we can scope team records to it
+  const weekInfo = await prisma.week.findUnique({
+    where: { id: weekId },
+    select: { seasonId: true },
+  });
+  const seasonId = weekInfo?.seasonId;
+
   return prisma.game.findMany({
     where: { weekId },
     include: {
       homeTeam: {
-        include: { teamRecords: { where: { weekId } } },
+        include: {
+          // Most recent record from a *confirmed* week in this season
+          teamRecords: {
+            where: seasonId
+              ? { week: { seasonId, confirmedAt: { not: null } } }
+              : { week: { confirmedAt: { not: null } } },
+            orderBy: { week: { number: "desc" } },
+            take: 1,
+          },
+        },
       },
       awayTeam: {
-        include: { teamRecords: { where: { weekId } } },
+        include: {
+          teamRecords: {
+            where: seasonId
+              ? { week: { seasonId, confirmedAt: { not: null } } }
+              : { week: { confirmedAt: { not: null } } },
+            orderBy: { week: { number: "desc" } },
+            take: 1,
+          },
+        },
       },
       winner: true,
     },

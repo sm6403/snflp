@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getTeamLogoUrl } from "@/lib/nfl-teams";
+import { LeaderboardMultiChart, type ChartSeries } from "@/components/leaderboard-chart";
 
 interface LeaderboardUser {
   userId: string;
   displayName: string;
+  favoriteTeam: string;
   rank: number;
   correct: number;
   graded: number;
@@ -45,7 +48,17 @@ function PositionBadge({ change }: { change: number | null }) {
   return <span className="inline-flex rounded-full bg-zinc-700/40 px-2 py-0.5 text-xs font-semibold text-zinc-500">—</span>;
 }
 
-export function SeasonLeaderboard({ userId }: { userId: string }) {
+export function SeasonLeaderboard({
+  userId,
+  chartWeeks,
+  chartSeries,
+  totalPlayers,
+}: {
+  userId: string;
+  chartWeeks: Array<{ weekNumber: number; weekLabel: string }>;
+  chartSeries: ChartSeries[];
+  totalPlayers: number;
+}) {
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -123,20 +136,29 @@ export function SeasonLeaderboard({ userId }: { userId: string }) {
                     {u.rank}
                   </td>
                   <td className="px-4 py-3">
-                    <span
-                      className={`font-medium ${
-                        isMe
-                          ? "text-indigo-700 dark:text-indigo-300"
-                          : "text-zinc-900 dark:text-zinc-100"
-                      }`}
-                    >
-                      {u.displayName}
-                      {isMe && (
-                        <span className="ml-1.5 text-xs text-indigo-500 dark:text-indigo-400">
-                          (you)
-                        </span>
+                    <div className="flex items-center gap-2">
+                      {u.favoriteTeam && (
+                        <img
+                          src={getTeamLogoUrl(u.favoriteTeam)}
+                          alt={u.favoriteTeam}
+                          className="h-6 w-6 flex-shrink-0 object-contain"
+                        />
                       )}
-                    </span>
+                      <span
+                        className={`font-medium ${
+                          isMe
+                            ? "text-indigo-700 dark:text-indigo-300"
+                            : "text-zinc-900 dark:text-zinc-100"
+                        }`}
+                      >
+                        {u.displayName}
+                        {isMe && (
+                          <span className="ml-1.5 text-xs text-indigo-500 dark:text-indigo-400">
+                            (you)
+                          </span>
+                        )}
+                      </span>
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-right text-zinc-700 dark:text-zinc-300">
                     {u.correct}/{u.graded}
@@ -163,6 +185,15 @@ export function SeasonLeaderboard({ userId }: { userId: string }) {
           </tbody>
         </table>
       </div>
+      {/* Position history chart */}
+      {chartSeries.length > 0 && chartWeeks.length > 0 && (
+        <LeaderboardMultiChart
+          weeks={chartWeeks}
+          series={chartSeries}
+          currentUserId={userId}
+          maxY={totalPlayers}
+        />
+      )}
     </div>
   );
 }

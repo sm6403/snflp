@@ -135,3 +135,10 @@ model AppSettings {
   testSeasonId String?
   testWeekId   String?
 }
+
+model AdminUser {
+  id             String   @id @default(cuid())
+  username       String   @unique
+  hashedPassword String
+  createdAt      DateTime @default(now())
+}

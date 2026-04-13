@@ -3,9 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { verifyAdminSession } from "@/lib/admin-auth";
 
 // POST /api/admin/confirm-week
-// Bulk-grades all picks for the week and stamps Week.confirmedAt.
-// The admin enters individual game winners first (PATCH /api/admin/games/[gameId]),
-// then calls this once to publish results to users.
+// Bulk-grades all picks for the week, stamps Week.confirmedAt, and
+// recomputes cumulative team records (W-L-T) for all teams that have
+// played confirmed games in this season.
 export async function POST(request: Request) {
   if (!(await verifyAdminSession())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -18,7 +18,11 @@ export async function POST(request: Request) {
 
   const week = await prisma.week.findUnique({
     where: { id: weekId },
-    include: { games: { select: { id: true, winnerId: true, isTie: true } } },
+    include: {
+      games: {
+        select: { id: true, homeTeamId: true, awayTeamId: true, winnerId: true, isTie: true },
+      },
+    },
   });
   if (!week) {
     return NextResponse.json({ error: "Week not found" }, { status: 404 });
@@ -44,15 +48,20 @@ export async function POST(request: Request) {
   let gradedCount = 0;
 
   await prisma.$transaction(async (tx) => {
+    // ── Grade picks ──────────────────────────────────────────────────────────
     for (const game of week.games) {
-      // First reset any existing grades for this game (handles re-confirmation)
+      // Reset any existing grades (handles re-confirmation)
       await tx.pick.updateMany({
         where: { gameId: game.id },
         data: { isCorrect: null },
       });
 
       if (game.isTie) {
-        // Tied game: no picks are graded — isCorrect stays null (neither right nor wrong)
+        // Tied game: everyone loses — all picks are incorrect
+        await tx.pick.updateMany({
+          where: { gameId: game.id },
+          data: { isCorrect: false },
+        });
         continue;
       }
 
@@ -63,7 +72,7 @@ export async function POST(request: Request) {
         where: { gameId: game.id, pickedTeamId: winnerId },
         data: { isCorrect: true },
       });
-      // Wrong picks (has a pick but it's the losing team)
+      // Wrong picks (picked the losing team)
       await tx.pick.updateMany({
         where: { gameId: game.id, NOT: { pickedTeamId: winnerId }, pickedTeamId: { not: null } },
         data: { isCorrect: false },
@@ -82,6 +91,52 @@ export async function POST(request: Request) {
       where: { id: weekId },
       data: { confirmedAt: new Date() },
     });
+
+    // ── Recompute team records ────────────────────────────────────────────────
+    // Fetch all previously confirmed games in this season (other weeks)
+    const previousGames = await tx.game.findMany({
+      where: {
+        weekId: { not: weekId },
+        week: { seasonId: week.seasonId, confirmedAt: { not: null } },
+      },
+      select: { homeTeamId: true, awayTeamId: true, winnerId: true, isTie: true },
+    });
+
+    // Combine with this week's just-confirmed games
+    const allConfirmedGames = [
+      ...previousGames,
+      ...week.games.map((g) => ({
+        homeTeamId: g.homeTeamId,
+        awayTeamId: g.awayTeamId,
+        winnerId: g.winnerId,
+        isTie: g.isTie,
+      })),
+    ];
+
+    // Accumulate W-L-T per team
+    const records = new Map<string, { wins: number; losses: number; ties: number }>();
+    for (const game of allConfirmedGames) {
+      for (const teamId of [game.homeTeamId, game.awayTeamId]) {
+        if (!records.has(teamId)) records.set(teamId, { wins: 0, losses: 0, ties: 0 });
+        const r = records.get(teamId)!;
+        if (game.isTie) {
+          r.ties++;
+        } else if (game.winnerId === teamId) {
+          r.wins++;
+        } else if (game.winnerId !== null) {
+          r.losses++;
+        }
+      }
+    }
+
+    // Upsert a TeamRecord for each team keyed to the just-confirmed week
+    for (const [teamId, record] of records) {
+      await tx.teamRecord.upsert({
+        where: { teamId_weekId: { teamId, weekId } },
+        create: { teamId, weekId, ...record },
+        update: record,
+      });
+    }
   });
 
   const updatedWeek = await prisma.week.findUnique({ where: { id: weekId } });

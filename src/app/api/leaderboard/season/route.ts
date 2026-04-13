@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
+import { verifyAdminSession } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
 
 // GET /api/leaderboard/season
@@ -8,13 +9,15 @@ import { prisma } from "@/lib/prisma";
 // positionChange compares current ranking vs ranking without the most-recently-confirmed week.
 export async function GET() {
   const session = await auth();
-  if (!session?.user?.id) {
+  const isAdmin = !session?.user?.id && (await verifyAdminSession());
+  if (!session?.user?.id && !isAdmin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const currentUserId = session?.user?.id ?? "";
 
   const season = await prisma.season.findFirst({ where: { isCurrent: true } });
   if (!season) {
-    return NextResponse.json({ season: null, users: [], mostRecentWeekLabel: null, currentUserId: session.user.id });
+    return NextResponse.json({ season: null, users: [], mostRecentWeekLabel: null, currentUserId });
   }
 
   // All confirmed weeks for this season, most recent first
@@ -28,7 +31,7 @@ export async function GET() {
     return NextResponse.json({
       season: { id: season.id, year: season.year },
       mostRecentWeekLabel: null,
-      currentUserId: session.user.id,
+      currentUserId,
       users: [],
     });
   }
@@ -40,7 +43,7 @@ export async function GET() {
   // Fetch all users who are active and visible on the leaderboard
   const users = await prisma.user.findMany({
     where: { disabled: false, showOnLeaderboard: true },
-    select: { id: true, name: true, alias: true, email: true },
+    select: { id: true, name: true, alias: true, email: true, favoriteTeam: true },
   });
 
   // Fetch all pick sets across confirmed weeks for all users
@@ -91,8 +94,8 @@ export async function GET() {
         return { userId: u.id, correct: s.correct, graded: s.graded, pct, displayName };
       })
       .sort((a, b) => {
-        if (b.pct !== a.pct) return b.pct - a.pct;
         if (b.correct !== a.correct) return b.correct - a.correct;
+        if (b.pct !== a.pct) return b.pct - a.pct;
         return a.displayName.localeCompare(b.displayName);
       });
 
@@ -115,6 +118,7 @@ export async function GET() {
       return {
         userId: u.id,
         displayName,
+        favoriteTeam: u.favoriteTeam,
         rank,
         correct: s.correct,
         graded: s.graded,
@@ -127,7 +131,7 @@ export async function GET() {
   return NextResponse.json({
     season: { id: season.id, year: season.year },
     mostRecentWeekLabel: mostRecentWeek.label,
-    currentUserId: session.user.id,
+    currentUserId,
     users: result,
   });
 }
