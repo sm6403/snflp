@@ -203,6 +203,8 @@ export function AdminDashboardContent() {
   const [loading, setLoading] = useState(true);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [togglingLeaderboard, setTogglingLeaderboard] = useState<string | null>(null);
+  const [deletingUser, setDeletingUser] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const fetchUsers = useCallback(async () => {
     const res = await fetch("/api/admin/users");
@@ -221,6 +223,17 @@ export function AdminDashboardContent() {
       .then((d) => setIsSuperAdmin(d.isSuperAdmin ?? false))
       .catch(() => {});
   }, [fetchUsers]);
+
+  async function handleDeleteUser(userId: string) {
+    setDeletingUser(userId);
+    try {
+      await fetch(`/api/admin/users/${userId}`, { method: "DELETE" });
+      setUsers((prev) => prev.filter((u) => u.id !== userId));
+    } finally {
+      setDeletingUser(null);
+      setConfirmDeleteId(null);
+    }
+  }
 
   async function handleLeaderboardToggle(userId: string, current: boolean) {
     setTogglingLeaderboard(userId);
@@ -339,6 +352,30 @@ export function AdminDashboardContent() {
                         >
                           Manage
                         </Link>
+                        {confirmDeleteId === user.id ? (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleDeleteUser(user.id)}
+                              disabled={deletingUser === user.id}
+                              className="rounded-md bg-red-600/30 px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-600/50 disabled:opacity-40"
+                            >
+                              {deletingUser === user.id ? "Deleting…" : "Confirm"}
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteId(null)}
+                              className="rounded-md px-2 py-1 text-xs text-zinc-500 hover:text-zinc-300"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmDeleteId(user.id)}
+                            className="rounded-md px-3 py-1 text-xs font-medium text-red-500 transition-colors hover:bg-red-900/20"
+                          >
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

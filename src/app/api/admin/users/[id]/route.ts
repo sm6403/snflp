@@ -34,6 +34,40 @@ export async function GET(
   return NextResponse.json({ user });
 }
 
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  if (!(await verifyAdminSession())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await params;
+
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  // Delete in dependency order: picks → pick sets → user
+  await prisma.$transaction(async (tx) => {
+    const pickSets = await tx.pickSet.findMany({
+      where: { userId: id },
+      select: { id: true },
+    });
+    const pickSetIds = pickSets.map((ps) => ps.id);
+
+    if (pickSetIds.length > 0) {
+      await tx.pick.deleteMany({ where: { pickSetId: { in: pickSetIds } } });
+      await tx.pickSet.deleteMany({ where: { id: { in: pickSetIds } } });
+    }
+
+    await tx.user.delete({ where: { id } });
+  });
+
+  return NextResponse.json({ deleted: true });
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
