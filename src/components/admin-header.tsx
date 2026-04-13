@@ -33,6 +33,12 @@ export function AdminHeader({ active }: { active: ActiveTab }) {
               TEST
             </span>
           )}
+          <span
+            title="Deployed commit hash — compare with git log"
+            className="rounded px-1.5 py-0.5 font-mono text-[10px] text-zinc-600 bg-zinc-800/60"
+          >
+            {process.env.NEXT_PUBLIC_APP_VERSION ?? "dev"}
+          </span>
         </div>
         <div className="flex items-center gap-4">
           <nav className="flex gap-1">

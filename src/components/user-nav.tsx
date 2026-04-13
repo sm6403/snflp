@@ -5,6 +5,8 @@ interface UserNavProps {
 }
 
 export function UserNav({ active }: UserNavProps) {
+  const version = process.env.NEXT_PUBLIC_APP_VERSION ?? "dev";
+
   return (
     <nav className="flex items-center gap-1">
       <Link
@@ -27,6 +29,12 @@ export function UserNav({ active }: UserNavProps) {
       >
         Leaderboard
       </Link>
+      <span
+        title="Deployed commit hash"
+        className="ml-1 rounded px-1.5 py-0.5 font-mono text-[10px] text-zinc-500 dark:text-zinc-600"
+      >
+        {version}
+      </span>
     </nav>
   );
 }
