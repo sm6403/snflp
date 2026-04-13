@@ -949,6 +949,8 @@ function WeekScheduleEditor({
   const [error, setError] = useState<string | null>(null);
   // Set of team IDs that appear more than once across all rows
   const [duplicateTeamIds, setDuplicateTeamIds] = useState<Set<string>>(new Set());
+  // Number of rows to add with the bulk-add button
+  const [addCount, setAddCount] = useState(1);
 
   useEffect(() => {
     setLoading(true);
@@ -994,6 +996,15 @@ function WeekScheduleEditor({
   function addRow() {
     if (rows.length >= 16) return;
     setRows((r) => [...r, { homeTeamId: "", awayTeamId: "", gameTime: "" }]);
+  }
+
+  function addRows(count: number) {
+    setRows((r) => {
+      const toAdd = Math.min(count, 16 - r.length);
+      if (toAdd <= 0) return r;
+      const newRows = Array.from({ length: toAdd }, () => ({ homeTeamId: "", awayTeamId: "", gameTime: "" }));
+      return [...r, ...newRows];
+    });
   }
 
   function removeRow(idx: number) {
@@ -1082,6 +1093,21 @@ function WeekScheduleEditor({
 
   const isConfirmed = !!week?.confirmedAt;
 
+  // Cursor: the next empty slot when clicking bye-week logos (away before home, top to bottom)
+  const cursorSlot: { rowIdx: number; field: "awayTeamId" | "homeTeamId" } | null = (() => {
+    if (isConfirmed) return null;
+    for (let i = 0; i < rows.length; i++) {
+      if (!rows[i].awayTeamId) return { rowIdx: i, field: "awayTeamId" };
+      if (!rows[i].homeTeamId) return { rowIdx: i, field: "homeTeamId" };
+    }
+    return null;
+  })();
+
+  function handleByeTeamClick(teamId: string) {
+    if (!cursorSlot || isConfirmed) return;
+    updateRow(cursorSlot.rowIdx, cursorSlot.field, teamId);
+  }
+
   // Teams on bye = allTeams not in assignedTeamIds
   const byeTeams = allTeams.filter((t) => !assignedTeamIds.has(t.id));
 
@@ -1131,6 +1157,8 @@ function WeekScheduleEditor({
               const awayIsDup = !!row.awayTeamId && duplicateTeamIds.has(row.awayTeamId);
               const homeIsDup = !!row.homeTeamId && duplicateTeamIds.has(row.homeTeamId);
               const rowHasError = awayIsDup || homeIsDup;
+              const awayCursor = cursorSlot?.rowIdx === idx && cursorSlot.field === "awayTeamId";
+              const homeCursor = cursorSlot?.rowIdx === idx && cursorSlot.field === "homeTeamId";
 
               return (
                 <div
@@ -1149,6 +1177,8 @@ function WeekScheduleEditor({
                     className={`rounded-lg border px-2 py-1.5 text-sm text-zinc-100 focus:outline-none disabled:opacity-60 ${
                       awayIsDup
                         ? "border-red-500 bg-red-900/30 focus:border-red-400"
+                        : awayCursor
+                        ? "border-amber-400 bg-zinc-800 ring-1 ring-amber-400/50 focus:border-amber-400"
                         : "border-zinc-700 bg-zinc-800 focus:border-indigo-500"
                     }`}
                   >
@@ -1168,6 +1198,8 @@ function WeekScheduleEditor({
                     className={`rounded-lg border px-2 py-1.5 text-sm text-zinc-100 focus:outline-none disabled:opacity-60 ${
                       homeIsDup
                         ? "border-red-500 bg-red-900/30 focus:border-red-400"
+                        : homeCursor
+                        ? "border-amber-400 bg-zinc-800 ring-1 ring-amber-400/50 focus:border-amber-400"
                         : "border-zinc-700 bg-zinc-800 focus:border-indigo-500"
                     }`}
                   >
@@ -1204,24 +1236,41 @@ function WeekScheduleEditor({
           {/* Bye-week teams */}
           {byeTeams.length > 0 && (
             <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-3">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Bye Week ({byeTeams.length} team{byeTeams.length !== 1 ? "s" : ""})
-              </p>
+              <div className="mb-2 flex items-center gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  Bye Week ({byeTeams.length} team{byeTeams.length !== 1 ? "s" : ""})
+                </p>
+                {!isConfirmed && cursorSlot && (
+                  <span className="text-xs text-amber-400">
+                    ↑ click a logo to assign as {cursorSlot.field === "awayTeamId" ? "away" : "home"} team in game {cursorSlot.rowIdx + 1}
+                  </span>
+                )}
+              </div>
               <div className="flex flex-wrap gap-2">
-                {byeTeams.map((t) => (
-                  <div
-                    key={t.id}
-                    title={t.name}
-                    className="flex flex-col items-center gap-0.5 opacity-50"
-                  >
-                    <img
-                      src={`https://a.espncdn.com/i/teamlogos/nfl/500/${t.espnId}.png`}
-                      alt={t.abbreviation}
-                      className="h-8 w-8 object-contain"
-                    />
-                    <span className="text-[10px] text-zinc-500">{t.abbreviation}</span>
-                  </div>
-                ))}
+                {byeTeams.map((t) => {
+                  const clickable = !isConfirmed && !!cursorSlot;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      title={clickable ? `Assign ${t.name} → game ${(cursorSlot?.rowIdx ?? 0) + 1} ${cursorSlot?.field === "awayTeamId" ? "(away)" : "(home)"}` : t.name}
+                      onClick={() => handleByeTeamClick(t.id)}
+                      disabled={!clickable}
+                      className={`flex flex-col items-center gap-0.5 rounded-lg p-1 transition-all ${
+                        clickable
+                          ? "cursor-pointer opacity-90 hover:bg-zinc-700/60 hover:opacity-100 hover:scale-110"
+                          : "cursor-default opacity-40"
+                      }`}
+                    >
+                      <img
+                        src={`https://a.espncdn.com/i/teamlogos/nfl/500/${t.espnId}.png`}
+                        alt={t.abbreviation}
+                        className="h-8 w-8 object-contain"
+                      />
+                      <span className="text-[10px] text-zinc-500">{t.abbreviation}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1230,12 +1279,26 @@ function WeekScheduleEditor({
           {!isConfirmed && (
             <div className="flex flex-wrap items-center gap-3">
               {rows.length < 16 && (
-                <button
-                  onClick={addRow}
-                  className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
-                >
-                  + Add Game
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => addRows(addCount)}
+                    className="rounded-l-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+                  >
+                    + Add Game{addCount !== 1 ? `s` : ""}
+                  </button>
+                  <input
+                    type="number"
+                    min={1}
+                    max={16 - rows.length}
+                    value={addCount}
+                    onChange={(e) => {
+                      const v = Math.max(1, Math.min(16 - rows.length, parseInt(e.target.value) || 1));
+                      setAddCount(v);
+                    }}
+                    className="w-14 rounded-r-lg border border-l-0 border-zinc-700 bg-zinc-800 px-2 py-1.5 text-center text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+                    title="Number of games to add"
+                  />
+                </div>
               )}
               <button
                 onClick={handleSave}
