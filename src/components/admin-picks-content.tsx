@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AdminHeader } from "./admin-header";
 
 interface Team {
@@ -264,7 +265,7 @@ function ConfirmResults({
   confirmedAt: string | null;
   nextWeekId: string | null;
   nextWeekLabel: string | null;
-  onConfirmed: () => void;
+  onConfirmed: (advancedToWeekId?: string) => void;
 }) {
   const [open, setOpen] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
@@ -336,8 +337,10 @@ function ConfirmResults({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ isCurrent: true }),
         });
+        onConfirmed(nextWeekId);
+      } else {
+        onConfirmed();
       }
-      onConfirmed();
     } catch {
       setConfirmError("Network error — please try again");
     } finally {
@@ -678,11 +681,14 @@ function LockTimeControl({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function AdminPicksContent() {
+  const searchParams = useSearchParams();
+  const urlWeekId = searchParams.get("weekId");
+
   const [week, setWeek] = useState<Week | null>(null);
   const [pickSets, setPickSets] = useState<PickSet[]>([]);
   const [games, setGames] = useState<Game[]>([]);
   const [weeks, setWeeks] = useState<WeekOption[]>([]);
-  const [selectedWeekId, setSelectedWeekId] = useState<string>("");
+  const [selectedWeekId, setSelectedWeekId] = useState<string>(urlWeekId ?? "");
   const [loading, setLoading] = useState(true);
   const [weekActionLoading, setWeekActionLoading] = useState(false);
 
@@ -705,7 +711,7 @@ export function AdminPicksContent() {
   }, []);
 
   useEffect(() => {
-    fetchPicks();
+    fetchPicks(urlWeekId ?? undefined);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -734,7 +740,13 @@ export function AdminPicksContent() {
     setWeek((w) => w ? { ...w, lockAt: newLockAt } : w);
   }
 
-  const refresh = () => fetchPicks(selectedWeekId || undefined);
+  const refresh = (advancedToWeekId?: string) => {
+    if (advancedToWeekId) {
+      handleWeekChange(advancedToWeekId);
+    } else {
+      fetchPicks(selectedWeekId || undefined);
+    }
+  };
 
   // Find the week that immediately follows the current one in the same season
   const nextWeek = week

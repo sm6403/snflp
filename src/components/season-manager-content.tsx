@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { AdminHeader } from "./admin-header";
 
@@ -19,7 +20,7 @@ interface WeekSummary {
   isCurrent: boolean;
   lockedForSubmission: boolean;
   confirmedAt: string | null;
-  _count: { games: number };
+  _count: { games: number; pickSets: number };
 }
 
 interface SeasonSummary {
@@ -28,6 +29,7 @@ interface SeasonSummary {
   type: "regular" | "postseason";
   mode: "live" | "test";
   isCurrent: boolean;
+  timedAutolocking: boolean;
   parentSeason: { id: string; year: number; type: string } | null;
   _count: { weeks: number };
   weeks: WeekSummary[];
@@ -276,6 +278,8 @@ function SeasonList({
   const handleSetActive = (seasonId: string) => patchSeason(seasonId, "active", { isCurrent: true });
   const handleToggleMode = (seasonId: string, currentMode: string) =>
     patchSeason(seasonId, "mode", { mode: currentMode === "live" ? "test" : "live" });
+  const handleToggleTimedAutolocking = (seasonId: string, current: boolean) =>
+    patchSeason(seasonId, "timedAutolock", { timedAutolocking: !current });
 
   async function handleDelete(seasonId: string) {
     setActionLoading(seasonId + "-delete");
@@ -340,6 +344,7 @@ function SeasonList({
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">Type</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">Mode</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">Weeks</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">Timed Lock</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">Status</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">Actions</th>
               </tr>
@@ -351,6 +356,20 @@ function SeasonList({
                   <td className="px-4 py-3">{typeBadge(s.type)}</td>
                   <td className="px-4 py-3">{modeBadge(s.mode)}</td>
                   <td className="px-4 py-3 text-zinc-400">{s._count.weeks}</td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => handleToggleTimedAutolocking(s.id, s.timedAutolocking)}
+                      disabled={actionLoading === s.id + "-timedAutolock"}
+                      title="Games lock individually as each kickoff approaches"
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors disabled:opacity-40 ${
+                        s.timedAutolocking
+                          ? "bg-amber-600/20 text-amber-400 hover:bg-amber-600/30"
+                          : "bg-zinc-700/60 text-zinc-500 hover:bg-zinc-700 hover:text-zinc-300"
+                      }`}
+                    >
+                      {actionLoading === s.id + "-timedAutolock" ? "…" : s.timedAutolocking ? "⏰ On" : "Off"}
+                    </button>
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-1">
                       {s.isCurrent && (
@@ -447,17 +466,20 @@ type ResetConfirmState = "idle" | "warn" | "confirming";
 
 function SeasonDetail({
   season,
+  eligibleUsersCount,
   onBack,
   onNavigate,
   onRefresh,
 }: {
   season: SeasonSummary;
+  eligibleUsersCount: number;
   onBack: () => void;
   onNavigate: (view: View) => void;
   onRefresh: () => void;
 }) {
   const [addingWeek, setAddingWeek] = useState(false);
   const [settingCurrentWeek, setSettingCurrentWeek] = useState<string | null>(null);
+  const [settingLock, setSettingLock] = useState<string | null>(null);
   const [resetWeekState, setResetWeekState] = useState<ResetConfirmState>("idle");
   const [resetSeasonState, setResetSeasonState] = useState<ResetConfirmState>("idle");
   const [resetting, setResetting] = useState<"week" | "season" | null>(null);
@@ -506,6 +528,28 @@ function SeasonDetail({
       setError("Network error");
     } finally {
       setSettingCurrentWeek(null);
+    }
+  }
+
+  async function handleToggleLock(weekId: string, currentLocked: boolean) {
+    setSettingLock(weekId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/weeks/${weekId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lockedForSubmission: !currentLocked }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        setError(d.error ?? "Failed to update lock");
+      } else {
+        onRefresh();
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setSettingLock(null);
     }
   }
 
@@ -644,6 +688,17 @@ function SeasonDetail({
                       No games
                     </span>
                   )}
+                  {eligibleUsersCount > 0 && (
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+                      w._count.pickSets === eligibleUsersCount
+                        ? "bg-green-600/20 text-green-400"
+                        : w._count.pickSets > 0
+                        ? "bg-amber-600/20 text-amber-400"
+                        : "bg-zinc-700/60 text-zinc-500"
+                    }`}>
+                      {w._count.pickSets}/{eligibleUsersCount} submitted
+                    </span>
+                  )}
                   {w.lockedForSubmission && (
                     <span className="text-xs text-red-400">Locked</span>
                   )}
@@ -664,6 +719,27 @@ function SeasonDetail({
                     {isSettingThis ? "Setting…" : "Set Current"}
                   </button>
                 )}
+
+                {/* Lock/unlock toggle */}
+                <button
+                  onClick={() => handleToggleLock(w.id, w.lockedForSubmission)}
+                  disabled={settingLock === w.id}
+                  className={`rounded-md px-2 py-0.5 text-xs font-medium transition-colors disabled:opacity-40 ${
+                    w.lockedForSubmission
+                      ? "bg-red-600/20 text-red-400 hover:bg-red-600/30"
+                      : "border border-zinc-700 text-zinc-500 hover:border-red-600/60 hover:text-red-400"
+                  }`}
+                >
+                  {settingLock === w.id ? "…" : w.lockedForSubmission ? "🔒 Locked" : "🔓 Lock"}
+                </button>
+
+                {/* View Submissions */}
+                <Link
+                  href={`/admindash/picks?weekId=${w.id}`}
+                  className="rounded-md border border-zinc-700 px-2 py-0.5 text-xs font-medium text-zinc-500 transition-colors hover:border-zinc-500 hover:text-zinc-300"
+                >
+                  Submissions
+                </Link>
               </div>
             );
           })}
@@ -1184,6 +1260,7 @@ function WeekScheduleEditor({
 
 export function SeasonManagerContent() {
   const [seasons, setSeasons] = useState<SeasonSummary[]>([]);
+  const [eligibleUsersCount, setEligibleUsersCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<View>({ type: "list" });
 
@@ -1192,6 +1269,7 @@ export function SeasonManagerContent() {
     if (res.ok) {
       const data = await res.json();
       setSeasons(data.seasons ?? []);
+      setEligibleUsersCount(data.eligibleUsersCount ?? 0);
     }
     setLoading(false);
   }, []);
@@ -1206,6 +1284,7 @@ export function SeasonManagerContent() {
     if (res.ok) {
       const data = await res.json();
       setSeasons(data.seasons ?? []);
+      setEligibleUsersCount(data.eligibleUsersCount ?? 0);
     }
   }
 
@@ -1229,6 +1308,7 @@ export function SeasonManagerContent() {
         ) : view.type === "season" && currentSeason ? (
           <SeasonDetail
             season={currentSeason}
+            eligibleUsersCount={eligibleUsersCount}
             onBack={() => setView({ type: "list" })}
             onNavigate={setView}
             onRefresh={async () => {

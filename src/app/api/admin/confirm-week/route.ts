@@ -63,9 +63,14 @@ export async function POST(request: Request) {
         where: { gameId: game.id, pickedTeamId: winnerId },
         data: { isCorrect: true },
       });
-      // Wrong picks
+      // Wrong picks (has a pick but it's the losing team)
       await tx.pick.updateMany({
-        where: { gameId: game.id, NOT: { pickedTeamId: winnerId } },
+        where: { gameId: game.id, NOT: { pickedTeamId: winnerId }, pickedTeamId: { not: null } },
+        data: { isCorrect: false },
+      });
+      // Missed picks (null pickedTeamId — time-locked game with no selection)
+      await tx.pick.updateMany({
+        where: { gameId: game.id, pickedTeamId: null },
         data: { isCorrect: false },
       });
 

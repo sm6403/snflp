@@ -42,7 +42,7 @@ export async function GET(
 }
 
 // PATCH /api/admin/weeks/[weekId]
-// Currently supports: { isCurrent: true } — sets this week as current, clears others in the season.
+// Supports: { isCurrent: true } and/or { lockedForSubmission: boolean }
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ weekId: string }> }
@@ -52,7 +52,7 @@ export async function PATCH(
   }
 
   const { weekId } = await params;
-  const body = await request.json() as { isCurrent?: boolean };
+  const body = await request.json() as { isCurrent?: boolean; lockedForSubmission?: boolean };
 
   const week = await prisma.week.findUnique({ where: { id: weekId }, select: { id: true, seasonId: true } });
   if (!week) {
@@ -61,16 +61,25 @@ export async function PATCH(
 
   if (body.isCurrent === true) {
     await prisma.$transaction(async (tx) => {
-      // Clear isCurrent from all weeks in the season, then set it on this one
       await tx.week.updateMany({ where: { seasonId: week.seasonId }, data: { isCurrent: false } });
-      await tx.week.update({ where: { id: weekId }, data: { isCurrent: true } });
-      // Keep AppSettings in sync so both live mode (isCurrent) and
-      // test mode (testWeekId) always point to the same active week.
+      // Set as current and ensure it's unlocked so users can submit picks
+      await tx.week.update({ where: { id: weekId }, data: { isCurrent: true, lockedForSubmission: false } });
       await tx.appSettings.upsert({
         where: { id: "singleton" },
         create: { id: "singleton", mode: "live", testSeasonId: week.seasonId, testWeekId: weekId },
         update: { testSeasonId: week.seasonId, testWeekId: weekId },
       });
+    });
+  }
+
+  if (body.lockedForSubmission !== undefined) {
+    await prisma.week.update({
+      where: { id: weekId },
+      data: {
+        lockedForSubmission: body.lockedForSubmission,
+        // Unlocking clears the scheduled lockAt so the cron doesn't immediately re-lock
+        ...(body.lockedForSubmission === false && { lockAt: null }),
+      },
     });
   }
 

@@ -9,27 +9,38 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const seasons = await prisma.season.findMany({
-    orderBy: [{ year: "desc" }, { type: "asc" }],
-    include: {
-      parentSeason: { select: { id: true, year: true, type: true } },
-      _count: { select: { weeks: true } },
-      weeks: {
-        orderBy: { number: "asc" },
-        select: {
-          id: true,
-          number: true,
-          label: true,
-          isCurrent: true,
-          lockedForSubmission: true,
-          confirmedAt: true,
-          _count: { select: { games: true } },
+  const [seasons, eligibleUsersCount] = await Promise.all([
+    prisma.season.findMany({
+      orderBy: [{ year: "desc" }, { type: "asc" }],
+      select: {
+        id: true, year: true, type: true, mode: true,
+        isCurrent: true, timedAutolocking: true, createdAt: true,
+        parentSeasonId: true,
+        parentSeason: { select: { id: true, year: true, type: true } },
+        _count: { select: { weeks: true } },
+        weeks: {
+          orderBy: { number: "asc" },
+          select: {
+            id: true,
+            number: true,
+            label: true,
+            isCurrent: true,
+            lockedForSubmission: true,
+            confirmedAt: true,
+            _count: {
+              select: {
+                games: true,
+                pickSets: { where: { user: { showOnLeaderboard: true } } },
+              },
+            },
+          },
         },
       },
-    },
-  });
+    }),
+    prisma.user.count({ where: { showOnLeaderboard: true } }),
+  ]);
 
-  return NextResponse.json({ seasons });
+  return NextResponse.json({ seasons, eligibleUsersCount });
 }
 
 // POST /api/admin/seasons

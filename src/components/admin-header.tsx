@@ -46,7 +46,7 @@ export function AdminHeader({ active }: { active: ActiveTab }) {
               href="/admindash/picks"
               className={`rounded-md px-3 py-1.5 text-sm transition-colors ${active === "picks" ? "font-medium text-zinc-200" : "text-zinc-400 hover:text-zinc-200"}`}
             >
-              Picks
+              Current Week
             </Link>
             <Link
               href="/admindash/seasons"

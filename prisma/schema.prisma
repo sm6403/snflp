@@ -22,16 +22,17 @@ model User {
 }
 
 model Season {
-  id             String   @id @default(cuid())
-  year           Int
-  type           String   @default("regular")    // "regular" | "postseason"
-  mode           String   @default("live")        // "live" | "test"
-  isCurrent      Boolean  @default(false)
-  parentSeasonId String?
-  parentSeason   Season?  @relation("PostSeason", fields: [parentSeasonId], references: [id])
-  childSeasons   Season[] @relation("PostSeason")
-  weeks          Week[]
-  createdAt      DateTime @default(now())
+  id               String   @id @default(cuid())
+  year             Int
+  type             String   @default("regular")    // "regular" | "postseason"
+  mode             String   @default("live")        // "live" | "test"
+  isCurrent        Boolean  @default(false)
+  timedAutolocking Boolean  @default(false)
+  parentSeasonId   String?
+  parentSeason     Season?  @relation("PostSeason", fields: [parentSeasonId], references: [id])
+  childSeasons     Season[] @relation("PostSeason")
+  weeks            Week[]
+  createdAt        DateTime @default(now())
 
   @@unique([year, type])
 }
@@ -116,12 +117,12 @@ model Pick {
   id           String   @id @default(cuid())
   pickSetId    String
   gameId       String
-  pickedTeamId String
+  pickedTeamId String?  // null = missed pick (time-locked game, no selection made)
   isCorrect    Boolean?
   editedBy     String?
   pickSet      PickSet  @relation(fields: [pickSetId], references: [id])
   game         Game     @relation(fields: [gameId], references: [id])
-  pickedTeam   Team     @relation(fields: [pickedTeamId], references: [id])
+  pickedTeam   Team?    @relation(fields: [pickedTeamId], references: [id])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
