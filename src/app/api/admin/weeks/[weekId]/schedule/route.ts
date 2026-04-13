@@ -92,12 +92,13 @@ export async function PUT(
     { timeout: 30_000 } // 30 s — accommodates up to 16 sequential Neon round-trips
   );
 
-  // Upsert TeamRecord (0-0-0) for each team outside the transaction to avoid timeout
-  for (const teamId of uniqueTeamIds) {
-    await prisma.teamRecord.upsert({
-      where: { teamId_weekId: { teamId, weekId } },
-      update: {},
-      create: { teamId, weekId, wins: 0, losses: 0, ties: 0 },
+  // Ensure TeamRecord rows exist for each team (0-0-0 default).
+  // Use createMany with skipDuplicates — single round-trip instead of 32 sequential upserts,
+  // which was pushing total request time past Vercel's 10 s function timeout.
+  if (uniqueTeamIds.length > 0) {
+    await prisma.teamRecord.createMany({
+      data: uniqueTeamIds.map((teamId) => ({ teamId, weekId, wins: 0, losses: 0, ties: 0 })),
+      skipDuplicates: true,
     });
   }
 
