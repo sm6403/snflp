@@ -55,21 +55,24 @@ export async function PUT(
     }
   }
 
-  const result = await prisma.$transaction(async (tx) => {
-    // Delete existing picks linked to current games for this week (can't edit confirmed, but safe)
-    const existingGames = await tx.game.findMany({
-      where: { weekId },
-      select: { id: true },
-    });
-    if (existingGames.length > 0) {
-      await tx.pick.deleteMany({ where: { gameId: { in: existingGames.map((g) => g.id) } } });
-      await tx.game.deleteMany({ where: { weekId } });
-    }
+  // Delete existing picks + games, then create new games atomically.
+  // TeamRecord upserts run outside the transaction to avoid timeout on Neon
+  // (16 sequential round-trips can exceed the 5 s interactive transaction limit).
+  const createdGames = await prisma.$transaction(
+    async (tx) => {
+      const existingGames = await tx.game.findMany({
+        where: { weekId },
+        select: { id: true },
+      });
+      if (existingGames.length > 0) {
+        await tx.pick.deleteMany({ where: { gameId: { in: existingGames.map((g) => g.id) } } });
+        await tx.game.deleteMany({ where: { weekId } });
+      }
 
-    // Create new games
-    const createdGames = await Promise.all(
-      body.games.map((g) =>
-        tx.game.create({
+      // Create new games sequentially (PrismaPg adapter requires sequential ops in a transaction)
+      const games = [];
+      for (const g of body.games) {
+        const created = await tx.game.create({
           data: {
             weekId,
             homeTeamId: g.homeTeamId,
@@ -80,21 +83,23 @@ export async function PUT(
             homeTeam: { select: { id: true, name: true, abbreviation: true, espnId: true } },
             awayTeam: { select: { id: true, name: true, abbreviation: true, espnId: true } },
           },
-        })
-      )
-    );
+        });
+        games.push(created);
+      }
 
-    // Upsert TeamRecord (0-0-0) for each team if they don't have one for this week
-    for (const teamId of uniqueTeamIds) {
-      await tx.teamRecord.upsert({
-        where: { teamId_weekId: { teamId, weekId } },
-        update: {},
-        create: { teamId, weekId, wins: 0, losses: 0, ties: 0 },
-      });
-    }
+      return games;
+    },
+    { timeout: 30_000 } // 30 s — accommodates up to 16 sequential Neon round-trips
+  );
 
-    return createdGames;
-  });
+  // Upsert TeamRecord (0-0-0) for each team outside the transaction to avoid timeout
+  for (const teamId of uniqueTeamIds) {
+    await prisma.teamRecord.upsert({
+      where: { teamId_weekId: { teamId, weekId } },
+      update: {},
+      create: { teamId, weekId, wins: 0, losses: 0, ties: 0 },
+    });
+  }
 
-  return NextResponse.json({ games: result });
+  return NextResponse.json({ games: createdGames });
 }
