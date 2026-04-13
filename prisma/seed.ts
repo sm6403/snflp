@@ -66,9 +66,9 @@ async function main() {
 
   console.log("Seeding 2024 season...");
   const season = await prisma.season.upsert({
-    where: { year: 2024 },
+    where: { year_type: { year: 2024, type: "regular" } },
     update: { isCurrent: true },
-    create: { year: 2024, isCurrent: true },
+    create: { year: 2024, type: "regular", mode: "live", isCurrent: true },
   });
 
   console.log("Seeding Week 1...");

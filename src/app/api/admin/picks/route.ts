@@ -25,6 +25,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Week not found" }, { status: 404 });
   }
 
+  // Server-side auto-lock: if lockAt has passed and week isn't locked yet, lock it now
+  if (week.lockAt && !week.lockedForSubmission && new Date(week.lockAt) <= new Date()) {
+    week = await prisma.week.update({
+      where: { id: week.id },
+      data: { lockedForSubmission: true },
+      include: { season: true },
+    });
+  }
+
   const pickSets = await prisma.pickSet.findMany({
     where: { weekId: week.id },
     include: {

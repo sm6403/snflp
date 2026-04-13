@@ -13,6 +13,7 @@ interface WeekOption {
 interface SeasonOption {
   id: string;
   year: number;
+  type: string;
   weeks: WeekOption[];
 }
 
@@ -212,7 +213,7 @@ export function AdminSettingsContent() {
                       <option value="">Select a season…</option>
                       {seasons.map((s) => (
                         <option key={s.id} value={s.id}>
-                          {s.year} Season
+                          {s.year} {s.type === "postseason" ? "Post-Season" : "Regular Season"}
                         </option>
                       ))}
                     </select>

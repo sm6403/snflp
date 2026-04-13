@@ -8,8 +8,10 @@ export async function GET() {
   }
 
   const settings = await prisma.appSettings.findFirst();
+  // Settings page uses seasons for the test-week selector — return all seasons
+  // ordered by year desc, type asc so regular comes before postseason per year
   const seasons = await prisma.season.findMany({
-    orderBy: { year: "desc" },
+    orderBy: [{ year: "desc" }, { type: "asc" }],
     include: {
       weeks: {
         orderBy: { number: "asc" },

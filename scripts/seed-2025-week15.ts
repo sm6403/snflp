@@ -71,9 +71,9 @@ async function main() {
 
   console.log("Creating 2025 season...");
   const season = await prisma.season.upsert({
-    where: { year: 2025 },
+    where: { year_type: { year: 2025, type: "regular" } },
     update: {},
-    create: { year: 2025, isCurrent: false },
+    create: { year: 2025, type: "regular", mode: "live", isCurrent: false },
   });
 
   console.log("Creating Week 15...");

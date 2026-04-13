@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AdminLogoutButton } from "./admin-logout-button";
 
-type ActiveTab = "users" | "picks" | "settings";
+type ActiveTab = "users" | "picks" | "seasons" | "settings";
 
 export function AdminHeader({ active }: { active: ActiveTab }) {
   const [mode, setMode] = useState<string | null>(null);
@@ -47,6 +47,12 @@ export function AdminHeader({ active }: { active: ActiveTab }) {
               className={`rounded-md px-3 py-1.5 text-sm transition-colors ${active === "picks" ? "font-medium text-zinc-200" : "text-zinc-400 hover:text-zinc-200"}`}
             >
               Picks
+            </Link>
+            <Link
+              href="/admindash/seasons"
+              className={`rounded-md px-3 py-1.5 text-sm transition-colors ${active === "seasons" ? "font-medium text-zinc-200" : "text-zinc-400 hover:text-zinc-200"}`}
+            >
+              Seasons
             </Link>
             <Link
               href="/admindash/settings"

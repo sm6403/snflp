@@ -490,38 +490,52 @@ function LockTimeControl({
     if (!inputValue) return;
     setSaving(true);
     setError(null);
-    // Treat the input as UTC
-    const lockAtUtc = new Date(inputValue + "Z").toISOString();
-    const res = await fetch("/api/admin/picks", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "setLockTime", weekId, lockAt: lockAtUtc }),
-    });
-    if (res.ok) {
-      onUpdate(lockAtUtc);
-    } else {
-      const d = await res.json();
-      setError(d.error ?? "Failed to set lock time");
+    try {
+      // Treat the input as UTC by appending Z
+      const lockAtUtc = new Date(inputValue + "Z").toISOString();
+      if (isNaN(new Date(lockAtUtc).getTime())) {
+        setError("Invalid date/time");
+        return;
+      }
+      const res = await fetch("/api/admin/picks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "setLockTime", weekId, lockAt: lockAtUtc }),
+      });
+      if (res.ok) {
+        onUpdate(lockAtUtc);
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setError(d.error ?? `Server error (${res.status})`);
+      }
+    } catch {
+      setError("Network error — please try again");
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   }
 
   async function handleClear() {
     setSaving(true);
     setError(null);
-    const res = await fetch("/api/admin/picks", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "clearLockTime", weekId }),
-    });
-    if (res.ok) {
-      setInputValue("");
-      onUpdate(null);
-    } else {
-      const d = await res.json();
-      setError(d.error ?? "Failed to clear lock time");
+    try {
+      const res = await fetch("/api/admin/picks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "clearLockTime", weekId }),
+      });
+      if (res.ok) {
+        setInputValue("");
+        onUpdate(null);
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setError(d.error ?? `Server error (${res.status})`);
+      }
+    } catch {
+      setError("Network error — please try again");
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   }
 
   // Countdown helper
