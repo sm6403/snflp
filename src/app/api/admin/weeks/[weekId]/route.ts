@@ -40,3 +40,31 @@ export async function GET(
 
   return NextResponse.json({ week, allTeams });
 }
+
+// PATCH /api/admin/weeks/[weekId]
+// Currently supports: { isCurrent: true } — sets this week as current, clears others in the season.
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ weekId: string }> }
+) {
+  if (!(await verifyAdminSession())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { weekId } = await params;
+  const body = await request.json() as { isCurrent?: boolean };
+
+  const week = await prisma.week.findUnique({ where: { id: weekId }, select: { id: true, seasonId: true } });
+  if (!week) {
+    return NextResponse.json({ error: "Week not found" }, { status: 404 });
+  }
+
+  if (body.isCurrent === true) {
+    await prisma.$transaction([
+      prisma.week.updateMany({ where: { seasonId: week.seasonId }, data: { isCurrent: false } }),
+      prisma.week.update({ where: { id: weekId }, data: { isCurrent: true } }),
+    ]);
+  }
+
+  return NextResponse.json({ success: true });
+}

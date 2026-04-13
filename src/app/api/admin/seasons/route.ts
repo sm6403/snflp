@@ -20,6 +20,7 @@ export async function GET() {
           id: true,
           number: true,
           label: true,
+          isCurrent: true,
           lockedForSubmission: true,
           confirmedAt: true,
           _count: { select: { games: true } },

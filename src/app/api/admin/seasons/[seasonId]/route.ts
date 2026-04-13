@@ -49,7 +49,7 @@ export async function PATCH(request: Request, { params }: Params) {
           orderBy: { number: "asc" },
           select: {
             id: true, number: true, label: true,
-            lockedForSubmission: true, confirmedAt: true,
+            isCurrent: true, lockedForSubmission: true, confirmedAt: true,
             _count: { select: { games: true } },
           },
         },

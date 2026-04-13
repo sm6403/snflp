@@ -16,6 +16,7 @@ interface WeekSummary {
   id: string;
   number: number;
   label: string;
+  isCurrent: boolean;
   lockedForSubmission: boolean;
   confirmedAt: string | null;
   _count: { games: number };
@@ -432,6 +433,8 @@ function SeasonList({
 
 // ─── View B: Season Detail / Week Grid ───────────────────────────────────────
 
+type ResetConfirmState = "idle" | "warn" | "confirming";
+
 function SeasonDetail({
   season,
   onBack,
@@ -444,7 +447,13 @@ function SeasonDetail({
   onRefresh: () => void;
 }) {
   const [addingWeek, setAddingWeek] = useState(false);
+  const [settingCurrentWeek, setSettingCurrentWeek] = useState<string | null>(null);
+  const [resetWeekState, setResetWeekState] = useState<ResetConfirmState>("idle");
+  const [resetSeasonState, setResetSeasonState] = useState<ResetConfirmState>("idle");
+  const [resetting, setResetting] = useState<"week" | "season" | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const currentWeek = season.weeks.find((w) => w.isCurrent) ?? null;
 
   async function handleAddWeek() {
     setAddingWeek(true);
@@ -465,6 +474,71 @@ function SeasonDetail({
       setError("Network error");
     } finally {
       setAddingWeek(false);
+    }
+  }
+
+  async function handleSetCurrentWeek(weekId: string) {
+    setSettingCurrentWeek(weekId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/weeks/${weekId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isCurrent: true }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        setError(d.error ?? "Failed to set current week");
+      } else {
+        onRefresh();
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setSettingCurrentWeek(null);
+    }
+  }
+
+  async function handleResetWeek() {
+    if (!currentWeek) return;
+    setResetting("week");
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/reset-week", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weekId: currentWeek.id }),
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        setError(d.error ?? "Reset failed");
+      } else {
+        setResetWeekState("idle");
+        onRefresh();
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setResetting(null);
+    }
+  }
+
+  async function handleResetSeason() {
+    setResetting("season");
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/seasons/${season.id}/reset`, { method: "POST" });
+      const d = await res.json();
+      if (!res.ok) {
+        setError(d.error ?? "Reset failed");
+      } else {
+        setResetSeasonState("idle");
+        onRefresh();
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setResetting(null);
     }
   }
 
@@ -500,6 +574,12 @@ function SeasonDetail({
         <span>{scheduledCount} with games</span>
         <span>·</span>
         <span>{confirmedCount} confirmed</span>
+        {currentWeek && (
+          <>
+            <span>·</span>
+            <span className="text-indigo-400">Current: {currentWeek.label}</span>
+          </>
+        )}
         {season.parentSeason && (
           <>
             <span>·</span>
@@ -523,31 +603,58 @@ function SeasonDetail({
             const gameCount = w._count.games;
             const hasGames = gameCount > 0;
             const isConfirmed = !!w.confirmedAt;
+            const isThisCurrent = w.isCurrent;
+            const isSettingThis = settingCurrentWeek === w.id;
 
             return (
-              <button
+              <div
                 key={w.id}
-                onClick={() => onNavigate({ type: "week", weekId: w.id, seasonId: season.id })}
-                className="flex flex-col gap-2 rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-left transition-all hover:border-indigo-600/50 hover:bg-zinc-800/60"
+                className={`flex flex-col gap-2 rounded-lg border p-3 transition-all ${
+                  isThisCurrent
+                    ? "border-indigo-600/60 bg-indigo-900/10"
+                    : "border-zinc-800 bg-zinc-900"
+                }`}
               >
-                <span className="text-sm font-semibold text-zinc-200">{w.label}</span>
-                {isConfirmed ? (
-                  <span className="inline-flex rounded-full bg-green-600/20 px-2 py-0.5 text-xs font-semibold text-green-400">
-                    Confirmed
-                  </span>
-                ) : hasGames ? (
-                  <span className="inline-flex rounded-full bg-blue-600/20 px-2 py-0.5 text-xs font-semibold text-blue-400">
-                    {gameCount} game{gameCount !== 1 ? "s" : ""}
+                {/* Click area for schedule editor */}
+                <button
+                  onClick={() => onNavigate({ type: "week", weekId: w.id, seasonId: season.id })}
+                  className="flex flex-col gap-1.5 text-left hover:opacity-80 transition-opacity"
+                >
+                  <span className="text-sm font-semibold text-zinc-200">{w.label}</span>
+                  {isConfirmed ? (
+                    <span className="inline-flex rounded-full bg-green-600/20 px-2 py-0.5 text-xs font-semibold text-green-400">
+                      Confirmed
+                    </span>
+                  ) : hasGames ? (
+                    <span className="inline-flex rounded-full bg-blue-600/20 px-2 py-0.5 text-xs font-semibold text-blue-400">
+                      {gameCount} game{gameCount !== 1 ? "s" : ""}
+                    </span>
+                  ) : (
+                    <span className="inline-flex rounded-full bg-zinc-700/60 px-2 py-0.5 text-xs font-semibold text-zinc-500">
+                      No games
+                    </span>
+                  )}
+                  {w.lockedForSubmission && (
+                    <span className="text-xs text-red-400">Locked</span>
+                  )}
+                </button>
+
+                {/* Set Current Week */}
+                {isThisCurrent ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-indigo-600/20 px-2 py-0.5 text-xs font-semibold text-indigo-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-indigo-400" />
+                    Current
                   </span>
                 ) : (
-                  <span className="inline-flex rounded-full bg-zinc-700/60 px-2 py-0.5 text-xs font-semibold text-zinc-500">
-                    No games
-                  </span>
+                  <button
+                    onClick={() => handleSetCurrentWeek(w.id)}
+                    disabled={!!settingCurrentWeek}
+                    className="rounded-md border border-zinc-700 px-2 py-0.5 text-xs font-medium text-zinc-500 transition-colors hover:border-indigo-600/60 hover:text-indigo-400 disabled:opacity-40"
+                  >
+                    {isSettingThis ? "Setting…" : "Set Current"}
+                  </button>
                 )}
-                {w.lockedForSubmission && (
-                  <span className="text-xs text-red-400">Locked</span>
-                )}
-              </button>
+              </div>
             );
           })}
         </div>
@@ -563,6 +670,173 @@ function SeasonDetail({
           {addingWeek ? "Adding…" : "+ Add Week"}
         </button>
       )}
+
+      {/* ── Danger Zone ─────────────────────────────────────────────────────── */}
+      <div className="rounded-lg border border-red-900/50 bg-red-950/10 p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <span className="text-base font-semibold text-red-400">⚠ Danger Zone</span>
+        </div>
+
+        {/* Reset Current Week */}
+        <div className="space-y-2">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-zinc-200">Reset Current Week</p>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                Permanently deletes all submitted picks for{" "}
+                <span className="text-zinc-300">{currentWeek ? currentWeek.label : "the current week"}</span>,
+                clears results, and unlocks submissions.
+                {!currentWeek && <span className="text-amber-400"> No current week is set.</span>}
+              </p>
+            </div>
+            {resetWeekState === "idle" && (
+              <button
+                onClick={() => setResetWeekState("warn")}
+                disabled={!currentWeek}
+                className="flex-shrink-0 rounded-lg border border-red-700 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-900/20 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Reset Week
+              </button>
+            )}
+          </div>
+
+          {resetWeekState === "warn" && (
+            <div className="rounded-lg border border-red-700 bg-red-900/20 p-4 space-y-3">
+              <p className="text-sm font-semibold text-red-300">
+                Are you absolutely sure?
+              </p>
+              <p className="text-xs text-red-400">
+                This will <strong>permanently delete every pick</strong> submitted for{" "}
+                {currentWeek?.label} of the {season.year} season. Game results will be cleared
+                and the week will be unlocked. <strong>This cannot be undone.</strong>
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setResetWeekState("confirming")}
+                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500"
+                >
+                  Yes, I understand — delete all picks for {currentWeek?.label}
+                </button>
+                <button
+                  onClick={() => setResetWeekState("idle")}
+                  className="rounded-lg border border-zinc-600 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:bg-zinc-700"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {resetWeekState === "confirming" && (
+            <div className="rounded-lg border-2 border-red-600 bg-red-900/30 p-4 space-y-3">
+              <p className="text-sm font-bold text-red-200">
+                Final confirmation — this is irreversible.
+              </p>
+              <p className="text-xs text-red-300">
+                All picks for <strong>{currentWeek?.label}</strong> will be gone forever.
+                There is no undo.
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleResetWeek}
+                  disabled={resetting === "week"}
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-500 disabled:opacity-50"
+                >
+                  {resetting === "week" ? "Resetting…" : "DELETE ALL PICKS — CONFIRMED"}
+                </button>
+                <button
+                  onClick={() => setResetWeekState("idle")}
+                  disabled={resetting === "week"}
+                  className="rounded-lg border border-zinc-600 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:bg-zinc-700 disabled:opacity-40"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-red-900/40" />
+
+        {/* Reset Entire Season */}
+        <div className="space-y-2">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-zinc-200">Reset Entire Season</p>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                Permanently deletes all picks for every week in the {season.year} season,
+                clears all results, unlocks every week, and resets the current week back to Week 1.
+              </p>
+            </div>
+            {resetSeasonState === "idle" && (
+              <button
+                onClick={() => setResetSeasonState("warn")}
+                className="flex-shrink-0 rounded-lg border border-red-700 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-900/20"
+              >
+                Reset Season
+              </button>
+            )}
+          </div>
+
+          {resetSeasonState === "warn" && (
+            <div className="rounded-lg border border-red-700 bg-red-900/20 p-4 space-y-3">
+              <p className="text-sm font-semibold text-red-300">
+                Are you absolutely sure?
+              </p>
+              <p className="text-xs text-red-400">
+                This will <strong>permanently delete every pick ever submitted</strong> for the{" "}
+                {seasonLabel(season)}. All {season.weeks.length} weeks will be unlocked,
+                all confirmed results will be cleared, and the season will rewind to Week 1.{" "}
+                <strong>This cannot be undone.</strong>
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setResetSeasonState("confirming")}
+                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500"
+                >
+                  Yes, I understand — reset the entire {season.year} season
+                </button>
+                <button
+                  onClick={() => setResetSeasonState("idle")}
+                  className="rounded-lg border border-zinc-600 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:bg-zinc-700"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {resetSeasonState === "confirming" && (
+            <div className="rounded-lg border-2 border-red-600 bg-red-900/30 p-4 space-y-3">
+              <p className="text-sm font-bold text-red-200">
+                Final confirmation — this will wipe the entire season.
+              </p>
+              <p className="text-xs text-red-300">
+                Every pick for every week of the <strong>{seasonLabel(season)}</strong> will be
+                permanently deleted. All {season.weeks.length} weeks will be reset to an unlocked,
+                unconfirmed state and the current week will revert to Week 1.
+                There is no undo.
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleResetSeason}
+                  disabled={resetting === "season"}
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-500 disabled:opacity-50"
+                >
+                  {resetting === "season" ? "Resetting…" : "RESET ENTIRE SEASON — CONFIRMED"}
+                </button>
+                <button
+                  onClick={() => setResetSeasonState("idle")}
+                  disabled={resetting === "season"}
+                  className="rounded-lg border border-zinc-600 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:bg-zinc-700 disabled:opacity-40"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
