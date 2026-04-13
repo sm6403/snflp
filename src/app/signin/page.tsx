@@ -27,7 +27,9 @@ export default function SignInPage() {
 
     setLoading(false);
 
-    if (result?.error) {
+    if (result?.code === "account_disabled") {
+      setError("This account is disabled. Please contact the site admin.");
+    } else if (result?.error) {
       setError("Invalid email or password");
     } else {
       router.push("/dashboard");
