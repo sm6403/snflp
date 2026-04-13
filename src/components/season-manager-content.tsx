@@ -352,14 +352,24 @@ function SeasonList({
                   <td className="px-4 py-3">{modeBadge(s.mode)}</td>
                   <td className="px-4 py-3 text-zinc-400">{s._count.weeks}</td>
                   <td className="px-4 py-3">
-                    {s.isCurrent ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-600/20 px-2.5 py-0.5 text-xs font-semibold text-green-400">
-                        <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-                        Active
-                      </span>
-                    ) : (
-                      <span className="text-xs text-zinc-600">—</span>
-                    )}
+                    <div className="flex flex-col gap-1">
+                      {s.isCurrent && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-green-600/20 px-2.5 py-0.5 text-xs font-semibold text-green-400">
+                          <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
+                          Active
+                        </span>
+                      )}
+                      {(() => {
+                        const cw = s.weeks.find((w) => w.isCurrent);
+                        return cw ? (
+                          <span className="inline-flex rounded-full bg-indigo-600/20 px-2.5 py-0.5 text-xs font-semibold text-indigo-400">
+                            {cw.label}
+                          </span>
+                        ) : !s.isCurrent ? (
+                          <span className="text-xs text-zinc-600">—</span>
+                        ) : null;
+                      })()}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">

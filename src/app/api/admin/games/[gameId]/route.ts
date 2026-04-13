@@ -11,24 +11,29 @@ export async function PATCH(
   }
 
   const { gameId } = await params;
-  const body = await request.json() as { winnerId: string | null };
+  const body = await request.json() as { winnerId: string | null; isTie?: boolean };
 
   const game = await prisma.game.findUnique({ where: { id: gameId } });
   if (!game) {
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
   }
 
+  // A game is a tie when isTie=true (winnerId must be null)
+  const isTie = body.isTie === true;
+
   // If setting a winner, validate it's one of the two teams
-  if (body.winnerId !== null) {
+  if (!isTie && body.winnerId !== null) {
     if (body.winnerId !== game.homeTeamId && body.winnerId !== game.awayTeamId) {
       return NextResponse.json({ error: "Invalid winner team for this game" }, { status: 400 });
     }
   }
 
-  // Only update the winner — picks are graded in bulk by POST /api/admin/confirm-week
   const updatedGame = await prisma.game.update({
     where: { id: gameId },
-    data: { winnerId: body.winnerId },
+    data: {
+      winnerId: isTie ? null : body.winnerId,
+      isTie,
+    },
     include: { homeTeam: true, awayTeam: true, winner: true },
   });
 

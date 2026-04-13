@@ -35,13 +35,13 @@ export async function GET(
     where: { weekId },
     select: {
       userId: true,
-      user: { select: { id: true, name: true, alias: true, email: true, disabled: true } },
+      user: { select: { id: true, name: true, alias: true, email: true, disabled: true, showOnLeaderboard: true } },
       picks: { select: { isCorrect: true } },
     },
   });
 
   const ranked = pickSets
-    .filter((ps) => !ps.user.disabled)
+    .filter((ps) => !ps.user.disabled && ps.user.showOnLeaderboard)
     .map((ps) => {
       const graded = ps.picks.filter((p) => p.isCorrect !== null);
       const correct = graded.filter((p) => p.isCorrect === true).length;

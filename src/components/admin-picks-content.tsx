@@ -16,6 +16,7 @@ interface Game {
   awayTeam: Team;
   gameTime: string | null;
   winner: Team | null;
+  isTie: boolean;
 }
 
 interface Pick {
@@ -287,17 +288,31 @@ function ConfirmResults({
     const res = await fetch(`/api/admin/games/${gameId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ winnerId }),
+      body: JSON.stringify({ winnerId, isTie: false }),
     });
     if (res.ok) {
       const data = await res.json();
-      // Update just this game locally — no re-order
       setGames((gs) =>
-        gs.map((g) => (g.id === gameId ? { ...g, winner: data.game.winner } : g))
+        gs.map((g) => (g.id === gameId ? { ...g, winner: data.game.winner, isTie: false } : g))
       );
     }
     setSaving(null);
-    // No longer call onResultSet per-game — picks are graded in bulk on confirm
+  }
+
+  async function handleSetTie(gameId: string, currentlyTie: boolean) {
+    setSaving(gameId);
+    const res = await fetch(`/api/admin/games/${gameId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ winnerId: null, isTie: !currentlyTie }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setGames((gs) =>
+        gs.map((g) => (g.id === gameId ? { ...g, winner: null, isTie: data.game.isTie } : g))
+      );
+    }
+    setSaving(null);
   }
 
   async function handleConfirmAll() {
@@ -330,7 +345,7 @@ function ConfirmResults({
     }
   }
 
-  const winnersEntered = games.filter((g) => g.winner !== null).length;
+  const winnersEntered = games.filter((g) => g.winner !== null || g.isTie).length;
   const allGamesHaveWinners = games.length > 0 && winnersEntered === games.length;
 
   return (
@@ -358,20 +373,18 @@ function ConfirmResults({
         <div className="border-t border-indigo-800/50 px-5 pb-5 pt-4 space-y-3">
           {games.map((game) => {
             const isSaving = saving === game.id;
+            const awayWon = game.winner?.id === game.awayTeam.id;
+            const homeWon = game.winner?.id === game.homeTeam.id;
+            const resolved = awayWon || homeWon || game.isTie;
             return (
-              <div key={game.id} className="flex items-center gap-3">
+              <div key={game.id} className="flex items-center gap-2">
                 <div className="flex flex-1 gap-2">
                   {/* Away team */}
                   <button
-                    onClick={() =>
-                      handleSetWinner(
-                        game.id,
-                        game.winner?.id === game.awayTeam.id ? null : game.awayTeam.id
-                      )
-                    }
+                    onClick={() => handleSetWinner(game.id, awayWon ? null : game.awayTeam.id)}
                     disabled={isSaving}
                     className={`flex flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all disabled:opacity-50 ${
-                      game.winner?.id === game.awayTeam.id
+                      awayWon
                         ? "border-green-500 bg-green-500/20 text-green-300"
                         : "border-zinc-700 bg-zinc-800 text-zinc-300 hover:border-zinc-500"
                     }`}
@@ -382,24 +395,17 @@ function ConfirmResults({
                       className="h-6 w-6 object-contain"
                     />
                     {game.awayTeam.abbreviation}
-                    {game.winner?.id === game.awayTeam.id && (
-                      <span className="ml-auto text-green-400">✓</span>
-                    )}
+                    {awayWon && <span className="ml-auto text-green-400">✓</span>}
                   </button>
 
                   <span className="flex items-center text-xs text-zinc-500 px-1">@</span>
 
                   {/* Home team */}
                   <button
-                    onClick={() =>
-                      handleSetWinner(
-                        game.id,
-                        game.winner?.id === game.homeTeam.id ? null : game.homeTeam.id
-                      )
-                    }
+                    onClick={() => handleSetWinner(game.id, homeWon ? null : game.homeTeam.id)}
                     disabled={isSaving}
                     className={`flex flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all disabled:opacity-50 ${
-                      game.winner?.id === game.homeTeam.id
+                      homeWon
                         ? "border-green-500 bg-green-500/20 text-green-300"
                         : "border-zinc-700 bg-zinc-800 text-zinc-300 hover:border-zinc-500"
                     }`}
@@ -410,15 +416,30 @@ function ConfirmResults({
                       className="h-6 w-6 object-contain"
                     />
                     {game.homeTeam.abbreviation}
-                    {game.winner?.id === game.homeTeam.id && (
-                      <span className="ml-auto text-green-400">✓</span>
-                    )}
+                    {homeWon && <span className="ml-auto text-green-400">✓</span>}
+                  </button>
+
+                  {/* TIE button */}
+                  <button
+                    onClick={() => handleSetTie(game.id, game.isTie)}
+                    disabled={isSaving}
+                    className={`flex items-center rounded-lg border px-3 py-2 text-xs font-bold transition-all disabled:opacity-50 ${
+                      game.isTie
+                        ? "border-amber-500 bg-amber-500/20 text-amber-300"
+                        : "border-zinc-700 bg-zinc-800 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300"
+                    }`}
+                    title="Mark as tie — picks for this game won't be scored"
+                  >
+                    TIE
                   </button>
                 </div>
 
-                {game.winner && (
+                {resolved && (
                   <button
-                    onClick={() => handleSetWinner(game.id, null)}
+                    onClick={() => {
+                      if (game.isTie) handleSetTie(game.id, true);
+                      else handleSetWinner(game.id, null);
+                    }}
                     disabled={isSaving}
                     className="text-xs text-zinc-600 hover:text-zinc-400 disabled:opacity-40"
                     title="Clear result"

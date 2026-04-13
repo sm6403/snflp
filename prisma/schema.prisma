@@ -7,17 +7,18 @@ datasource db {
 }
 
 model User {
-  id             String    @id @default(cuid())
-  name           String?
-  email          String    @unique
-  hashedPassword String
-  alias          String?
-  favoriteTeam   String    @default("Los Angeles Rams")
-  disabled       Boolean   @default(true)
-  lastLoginAt    DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  pickSets       PickSet[]
+  id                String    @id @default(cuid())
+  name              String?
+  email             String    @unique
+  hashedPassword    String
+  alias             String?
+  favoriteTeam      String    @default("Los Angeles Rams")
+  disabled          Boolean   @default(true)
+  showOnLeaderboard Boolean   @default(true)
+  lastLoginAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  pickSets          PickSet[]
 }
 
 model Season {
@@ -85,6 +86,7 @@ model Game {
   homeTeamId String
   awayTeamId String
   winnerId   String?
+  isTie      Boolean   @default(false)
   gameTime   DateTime?
   week       Week      @relation(fields: [weekId], references: [id])
   homeTeam   Team      @relation("HomeTeam", fields: [homeTeamId], references: [id])
