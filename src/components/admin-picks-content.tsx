@@ -40,7 +40,7 @@ interface WeekOption {
   id: string;
   number: number;
   label: string;
-  season: { year: number };
+  season: { id: string; year: number };
 }
 
 interface Week {
@@ -50,7 +50,7 @@ interface Week {
   lockedForSubmission: boolean;
   lockAt: string | null;
   confirmedAt: string | null;
-  season: { year: number };
+  season: { id: string; year: number };
 }
 
 // ─── Status badge ────────────────────────────────────────────────────────────
@@ -254,17 +254,22 @@ function ConfirmResults({
   games: initialGames,
   weekId,
   confirmedAt,
+  nextWeekId,
+  nextWeekLabel,
   onConfirmed,
 }: {
   games: Game[];
   weekId: string;
   confirmedAt: string | null;
+  nextWeekId: string | null;
+  nextWeekLabel: string | null;
   onConfirmed: () => void;
 }) {
   const [open, setOpen] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [advanceToNext, setAdvanceToNext] = useState(false);
   // Keep a local copy so setting a winner updates in-place without re-ordering
   const [games, setGames] = useState<Game[]>(initialGames);
 
@@ -298,18 +303,31 @@ function ConfirmResults({
   async function handleConfirmAll() {
     setConfirming(true);
     setConfirmError(null);
-    const res = await fetch("/api/admin/confirm-week", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ weekId }),
-    });
-    if (res.ok) {
+    try {
+      const res = await fetch("/api/admin/confirm-week", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weekId }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setConfirmError(data.error ?? "Failed to confirm results");
+        return;
+      }
+      // Advance to next week if requested
+      if (advanceToNext && nextWeekId) {
+        await fetch(`/api/admin/weeks/${nextWeekId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isCurrent: true }),
+        });
+      }
       onConfirmed();
-    } else {
-      const data = await res.json();
-      setConfirmError(data.error ?? "Failed to confirm results");
+    } catch {
+      setConfirmError("Network error — please try again");
+    } finally {
+      setConfirming(false);
     }
-    setConfirming(false);
   }
 
   const winnersEntered = games.filter((g) => g.winner !== null).length;
@@ -413,10 +431,27 @@ function ConfirmResults({
           })}
 
           {/* Confirm All Results button */}
-          <div className="mt-4 border-t border-indigo-800/30 pt-4">
+          <div className="mt-4 border-t border-indigo-800/30 pt-4 space-y-3">
             {confirmError && (
-              <p className="mb-3 text-sm text-red-400">{confirmError}</p>
+              <p className="text-sm text-red-400">{confirmError}</p>
             )}
+
+            {/* Advance to next week option */}
+            {nextWeekId && (
+              <label className="flex cursor-pointer items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={advanceToNext}
+                  onChange={(e) => setAdvanceToNext(e.target.checked)}
+                  className="h-4 w-4 accent-indigo-500"
+                />
+                <span className="text-sm text-zinc-300">
+                  Also advance current week to{" "}
+                  <span className="font-semibold text-indigo-300">{nextWeekLabel}</span>
+                </span>
+              </label>
+            )}
+
             <div className="flex items-center gap-4">
               <button
                 onClick={handleConfirmAll}
@@ -428,7 +463,7 @@ function ConfirmResults({
                 }`}
               >
                 {confirming
-                  ? "Publishing…"
+                  ? advanceToNext && nextWeekId ? "Publishing & Advancing…" : "Publishing…"
                   : confirmedAt
                   ? "Re-Publish Results"
                   : "Publish All Results"}
@@ -680,6 +715,11 @@ export function AdminPicksContent() {
 
   const refresh = () => fetchPicks(selectedWeekId || undefined);
 
+  // Find the week that immediately follows the current one in the same season
+  const nextWeek = week
+    ? weeks.find((w) => w.season.id === week.season.id && w.number === week.number + 1) ?? null
+    : null;
+
   return (
     <div className="min-h-screen bg-zinc-900">
       <AdminHeader active="picks" />
@@ -767,6 +807,8 @@ export function AdminPicksContent() {
                 games={games}
                 weekId={week.id}
                 confirmedAt={week.confirmedAt}
+                nextWeekId={nextWeek?.id ?? null}
+                nextWeekLabel={nextWeek?.label ?? null}
                 onConfirmed={refresh}
               />
             )}

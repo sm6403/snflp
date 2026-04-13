@@ -63,7 +63,7 @@ export async function GET(request: Request) {
   // All weeks for the selector dropdown
   const weeks = await prisma.week.findMany({
     orderBy: [{ season: { year: "desc" } }, { number: "asc" }],
-    include: { season: { select: { year: true } } },
+    include: { season: { select: { id: true, year: true } } },
   });
 
   return NextResponse.json({ week, pickSets, weeks, games });

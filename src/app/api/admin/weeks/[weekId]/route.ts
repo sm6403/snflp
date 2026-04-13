@@ -60,10 +60,18 @@ export async function PATCH(
   }
 
   if (body.isCurrent === true) {
-    await prisma.$transaction([
-      prisma.week.updateMany({ where: { seasonId: week.seasonId }, data: { isCurrent: false } }),
-      prisma.week.update({ where: { id: weekId }, data: { isCurrent: true } }),
-    ]);
+    await prisma.$transaction(async (tx) => {
+      // Clear isCurrent from all weeks in the season, then set it on this one
+      await tx.week.updateMany({ where: { seasonId: week.seasonId }, data: { isCurrent: false } });
+      await tx.week.update({ where: { id: weekId }, data: { isCurrent: true } });
+      // Keep AppSettings in sync so both live mode (isCurrent) and
+      // test mode (testWeekId) always point to the same active week.
+      await tx.appSettings.upsert({
+        where: { id: "singleton" },
+        create: { id: "singleton", mode: "live", testSeasonId: week.seasonId, testWeekId: weekId },
+        update: { testSeasonId: week.seasonId, testWeekId: weekId },
+      });
+    });
   }
 
   return NextResponse.json({ success: true });

@@ -51,6 +51,12 @@ export async function POST(_request: Request, { params }: Params) {
           where: { id: firstWeek.id },
           data: { isCurrent: true },
         });
+        // Keep AppSettings in sync so both live and test modes see Week 1
+        await tx.appSettings.upsert({
+          where: { id: "singleton" },
+          create: { id: "singleton", mode: "live", testSeasonId: seasonId, testWeekId: firstWeek.id },
+          update: { testSeasonId: seasonId, testWeekId: firstWeek.id },
+        });
       }
     }
   });
