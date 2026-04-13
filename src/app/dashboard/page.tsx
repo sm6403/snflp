@@ -5,6 +5,9 @@ import { prisma } from "@/lib/prisma";
 import { SignOutButton } from "@/components/sign-out-button";
 import { FavoriteTeamPicker } from "@/components/favorite-team-picker";
 import { AliasEditor } from "@/components/alias-editor";
+import { WeekHistory } from "@/components/week-history";
+import { UserNav } from "@/components/user-nav";
+import { getCurrentWeek } from "@/lib/nfl-data";
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -13,18 +16,116 @@ export default async function DashboardPage() {
     redirect("/signin");
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { favoriteTeam: true, alias: true },
-  });
+  const [user, currentWeek] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { favoriteTeam: true, alias: true },
+    }),
+    getCurrentWeek(),
+  ]);
+
+  // Fetch the user's pick set for the current week (for status pill)
+  const currentPickSet = currentWeek
+    ? await prisma.pickSet.findUnique({
+        where: { userId_weekId: { userId: session.user.id, weekId: currentWeek.id } },
+        select: { lockedAt: true, lockedBy: true },
+      })
+    : null;
+
+  type PickStatus = "waiting" | "locked" | "unlocked" | "closed";
+  let pickStatus: PickStatus = "waiting";
+  if (currentWeek?.lockedForSubmission && !currentPickSet) {
+    pickStatus = "closed";
+  } else if (currentPickSet?.lockedAt) {
+    pickStatus = "locked";
+  } else if (currentPickSet && !currentPickSet.lockedAt) {
+    pickStatus = "unlocked";
+  }
+
+  // ── Season stats ────────────────────────────────────────────────────────────
+  // Fetch every pick the user has submitted this season, grouped by week.
+  const seasonStats = await (async () => {
+    if (!currentWeek) return null;
+
+    const seasonWeeks = await prisma.week.findMany({
+      where: { seasonId: currentWeek.seasonId },
+      select: { id: true, number: true, label: true, confirmedAt: true },
+    });
+    // Only count picks from weeks where results have been confirmed
+    const confirmedWeekIds = seasonWeeks
+      .filter((w) => w.confirmedAt !== null)
+      .map((w) => w.id);
+
+    const pickSets = await prisma.pickSet.findMany({
+      where: { userId: session.user!.id, weekId: { in: confirmedWeekIds } },
+      select: {
+        weekId: true,
+        picks: { select: { isCorrect: true } },
+      },
+    });
+
+    let totalCorrect = 0;
+    let totalWrong = 0;
+    let totalGraded = 0;
+    let weeksEntered = 0;
+
+    let bestWeekPct = -1;
+    let bestWeekLabel = "";
+    let bestWeekCorrect = 0;
+    let bestWeekGraded = 0;
+
+    for (const ps of pickSets) {
+      const graded = ps.picks.filter((p) => p.isCorrect !== null);
+      const correct = graded.filter((p) => p.isCorrect === true).length;
+      const wrong = graded.filter((p) => p.isCorrect === false).length;
+
+      weeksEntered++;
+      totalCorrect += correct;
+      totalWrong += wrong;
+      totalGraded += graded.length;
+
+      if (graded.length > 0) {
+        const pct = correct / graded.length;
+        if (pct > bestWeekPct) {
+          bestWeekPct = pct;
+          bestWeekCorrect = correct;
+          bestWeekGraded = graded.length;
+          const weekInfo = seasonWeeks.find((w) => w.id === ps.weekId);
+          bestWeekLabel = weekInfo?.label ?? "";
+        }
+      }
+    }
+
+    const overallPct =
+      totalGraded > 0 ? Math.round((totalCorrect / totalGraded) * 100) : null;
+    const bestPct =
+      bestWeekPct >= 0 ? Math.round(bestWeekPct * 100) : null;
+
+    return {
+      totalCorrect,
+      totalWrong,
+      totalGraded,
+      weeksEntered,
+      overallPct,
+      bestWeekLabel,
+      bestWeekCorrect,
+      bestWeekGraded,
+      bestPct,
+    };
+  })();
+
+  const hasAnyStats = seasonStats && seasonStats.totalGraded > 0;
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-zinc-950">
       <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            Dashboard
-          </h1>
+          <div className="flex items-center gap-6">
+            <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+              SNFLP
+            </h1>
+            <UserNav active="dashboard" />
+          </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-zinc-600 dark:text-zinc-400">
               {session.user.email}
@@ -44,25 +145,147 @@ export default async function DashboardPage() {
           </p>
         </div>
 
+        {/* Weekly Picks card */}
         <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-            Weekly Picks
-          </h3>
-          <div className="mt-3 flex items-center justify-between">
-            <p className="text-zinc-600 dark:text-zinc-300">
-              Make your picks for this week&apos;s NFL games.
-            </p>
-            <Link
-              href="/picks"
-              className="rounded-lg bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-            >
-              Go to Picks
-            </Link>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                Weekly Picks
+              </h3>
+              {currentWeek ? (
+                <>
+                  <p className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                    {currentWeek.season.year} — {currentWeek.label}
+                  </p>
+                  <div className="mt-2 flex items-center gap-2">
+                    {pickStatus === "waiting" && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/40 bg-indigo-500/10 px-2.5 py-0.5 text-xs font-medium text-indigo-400">
+                        <span className="h-1.5 w-1.5 rounded-full bg-indigo-400" />
+                        Waiting for picks
+                      </span>
+                    )}
+                    {pickStatus === "locked" && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-green-500/40 bg-green-500/10 px-2.5 py-0.5 text-xs font-medium text-green-400">
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
+                        Picks submitted
+                      </span>
+                    )}
+                    {pickStatus === "unlocked" && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-yellow-500/40 bg-yellow-500/10 px-2.5 py-0.5 text-xs font-medium text-yellow-400">
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-yellow-400" />
+                        Unlocked — update needed
+                      </span>
+                    )}
+                    {pickStatus === "closed" && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-600/40 bg-zinc-700/30 px-2.5 py-0.5 text-xs font-medium text-zinc-400">
+                        <span className="h-1.5 w-1.5 rounded-full bg-zinc-500" />
+                        Submissions closed
+                      </span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                  No active week right now.
+                </p>
+              )}
+            </div>
+            {currentWeek && (
+              <Link
+                href="/picks"
+                className="flex-shrink-0 rounded-lg bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                Go to Picks
+              </Link>
+            )}
           </div>
         </div>
 
+        {/* Season Stats card */}
+        {currentWeek && seasonStats && (
+          <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+              {currentWeek.season.year} Season Stats
+            </h3>
+
+            {hasAnyStats ? (
+              <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                {/* Correct */}
+                <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                    Correct
+                  </p>
+                  <p className="mt-1 text-3xl font-bold text-green-500">
+                    {seasonStats.totalCorrect}
+                  </p>
+                </div>
+
+                {/* Wrong */}
+                <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                    Wrong
+                  </p>
+                  <p className="mt-1 text-3xl font-bold text-red-500">
+                    {seasonStats.totalWrong}
+                  </p>
+                </div>
+
+                {/* Overall % */}
+                <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                    Overall
+                  </p>
+                  <p className={`mt-1 text-3xl font-bold ${
+                    (seasonStats.overallPct ?? 0) >= 70
+                      ? "text-green-500"
+                      : (seasonStats.overallPct ?? 0) >= 50
+                      ? "text-yellow-500"
+                      : "text-red-500"
+                  }`}>
+                    {seasonStats.overallPct ?? 0}%
+                  </p>
+                  <p className="mt-0.5 text-xs text-zinc-400">
+                    {seasonStats.totalCorrect}/{seasonStats.totalGraded} graded
+                  </p>
+                </div>
+
+                {/* Best week */}
+                <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                    Best Week
+                  </p>
+                  {seasonStats.bestPct !== null ? (
+                    <>
+                      <p className="mt-1 text-3xl font-bold text-indigo-500">
+                        {seasonStats.bestPct}%
+                      </p>
+                      <p className="mt-0.5 text-xs text-zinc-400">
+                        {seasonStats.bestWeekLabel} · {seasonStats.bestWeekCorrect}/{seasonStats.bestWeekGraded}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-1 text-sm text-zinc-400">—</p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-zinc-400 dark:text-zinc-500">
+                No graded results yet — your stats will appear once the admin confirms game results.
+              </p>
+            )}
+
+            {hasAnyStats && (
+              <p className="mt-3 text-xs text-zinc-400 dark:text-zinc-500">
+                Based on {seasonStats.weeksEntered} week{seasonStats.weeksEntered !== 1 ? "s" : ""} entered
+                · {seasonStats.totalGraded} pick{seasonStats.totalGraded !== 1 ? "s" : ""} graded
+              </p>
+            )}
+          </div>
+        )}
+
         <AliasEditor initialAlias={user?.alias ?? ""} />
         <FavoriteTeamPicker initialTeam={user?.favoriteTeam ?? "Los Angeles Rams"} />
+        <WeekHistory />
       </main>
     </div>
   );

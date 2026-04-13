@@ -32,6 +32,9 @@ export function AdminSettingsContent() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [resetConfirming, setResetConfirming] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetDone, setResetDone] = useState(false);
 
   const fetchSettings = useCallback(async () => {
     const res = await fetch("/api/admin/settings");
@@ -100,7 +103,33 @@ export function AdminSettingsContent() {
     await patchSettings({ testWeekId: weekId });
   }
 
+  async function handleReset() {
+    if (!selectedWeekId) return;
+    setResetting(true);
+    setError(null);
+    setResetDone(false);
+    try {
+      const res = await fetch("/api/admin/reset-week", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weekId: selectedWeekId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Reset failed");
+      } else {
+        setResetDone(true);
+        setResetConfirming(false);
+        setTimeout(() => setResetDone(false), 3000);
+      }
+    } catch {
+      setError("Network error — reset failed");
+    }
+    setResetting(false);
+  }
+
   const currentSeason = seasons.find((s) => s.id === selectedSeasonId);
+  const currentWeek = currentSeason?.weeks.find((w) => w.id === selectedWeekId);
   const isTest = settings?.mode === "test";
 
   return (
@@ -207,12 +236,54 @@ export function AdminSettingsContent() {
                   )}
                   {selectedWeekId && currentSeason && (
                     <p className="text-xs text-indigo-400">
-                      Users will see{" "}
-                      {currentSeason.weeks.find((w) => w.id === selectedWeekId)?.label} of the{" "}
-                      {currentSeason.year} season.
+                      Users will see {currentWeek?.label} of the {currentSeason.year} season.
                     </p>
                   )}
                 </div>
+
+                {/* Reset test week */}
+                {selectedWeekId && (
+                  <div className="border-t border-indigo-800/50 pt-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-medium text-zinc-200">Reset Week Data</p>
+                        <p className="mt-0.5 text-xs text-zinc-500">
+                          Deletes all submitted picks, clears confirmed results, and unlocks the week.
+                        </p>
+                      </div>
+                      {!resetConfirming ? (
+                        <button
+                          onClick={() => setResetConfirming(true)}
+                          className="flex-shrink-0 rounded-lg border border-red-700 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-900/20"
+                        >
+                          Reset
+                        </button>
+                      ) : (
+                        <div className="flex flex-shrink-0 items-center gap-2">
+                          <span className="text-xs text-zinc-400">Are you sure?</span>
+                          <button
+                            onClick={handleReset}
+                            disabled={resetting}
+                            className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-red-500 disabled:opacity-50"
+                          >
+                            {resetting ? "Resetting…" : "Yes, reset"}
+                          </button>
+                          <button
+                            onClick={() => setResetConfirming(false)}
+                            className="rounded-lg border border-zinc-600 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:bg-zinc-700"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {resetDone && (
+                      <p className="mt-2 text-xs text-green-400">
+                        ✓ Week reset — all picks and results cleared.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
