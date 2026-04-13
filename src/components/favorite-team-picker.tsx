@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { NFL_TEAMS } from "@/lib/nfl-teams";
+import { NFL_TEAMS, getTeamLogoUrl } from "@/lib/nfl-teams";
 
 export function FavoriteTeamPicker({ initialTeam }: { initialTeam: string }) {
   const [team, setTeam] = useState(initialTeam);
@@ -65,8 +65,11 @@ export function FavoriteTeamPicker({ initialTeam }: { initialTeam: string }) {
       ) : (
         <div className="mt-3 flex items-center gap-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800">
-            {/* Team logo placeholder */}
-            <span className="text-lg">🏈</span>
+            <img
+              src={getTeamLogoUrl(team)}
+              alt={team}
+              className="h-10 w-10 object-contain"
+            />
           </div>
           <div className="flex-1">
             <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">

@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { SignOutButton } from "@/components/sign-out-button";
 import { FavoriteTeamPicker } from "@/components/favorite-team-picker";
@@ -41,6 +42,23 @@ export default async function DashboardPage() {
           <p className="mt-2 text-zinc-600 dark:text-zinc-400">
             You are signed in. This is your protected dashboard.
           </p>
+        </div>
+
+        <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+          <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+            Weekly Picks
+          </h3>
+          <div className="mt-3 flex items-center justify-between">
+            <p className="text-zinc-600 dark:text-zinc-300">
+              Make your picks for this week&apos;s NFL games.
+            </p>
+            <Link
+              href="/picks"
+              className="rounded-lg bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            >
+              Go to Picks
+            </Link>
+          </div>
         </div>
 
         <AliasEditor initialAlias={user?.alias ?? ""} />

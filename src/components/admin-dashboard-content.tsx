@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { AdminToggleButton } from "./admin-toggle-button";
-import { AdminLogoutButton } from "./admin-logout-button";
 import { AdminCreateUser } from "./admin-create-user";
+import { AdminHeader } from "./admin-header";
+import { getTeamLogoUrl } from "@/lib/nfl-teams";
+
 
 interface User {
   id: string;
@@ -36,14 +38,7 @@ export function AdminDashboardContent() {
 
   return (
     <div className="min-h-screen bg-zinc-900">
-      <header className="border-b border-zinc-800">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <h1 className="text-lg font-semibold text-zinc-50">
-            Admin Dashboard
-          </h1>
-          <AdminLogoutButton />
-        </div>
-      </header>
+      <AdminHeader active="users" />
 
       <main className="mx-auto max-w-6xl px-6 py-10">
         <div className="mb-6 flex items-center justify-between">
@@ -83,7 +78,16 @@ export function AdminDashboardContent() {
                     <td className="px-4 py-3">{user.name || "—"}</td>
                     <td className="px-4 py-3 text-zinc-400">{user.alias || "—"}</td>
                     <td className="px-4 py-3">{user.email}</td>
-                    <td className="px-4 py-3 text-zinc-400">{user.favoriteTeam}</td>
+                    <td className="px-4 py-3 text-zinc-400">
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={getTeamLogoUrl(user.favoriteTeam)}
+                          alt={user.favoriteTeam}
+                          className="h-6 w-6 object-contain"
+                        />
+                        {user.favoriteTeam}
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${

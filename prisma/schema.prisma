@@ -7,9 +7,9 @@ datasource db {
 }
 
 model User {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   name           String?
-  email          String   @unique
+  email          String    @unique
   hashedPassword String
   alias          String?
   favoriteTeam   String    @default("Los Angeles Rams")
@@ -17,4 +17,108 @@ model User {
   lastLoginAt    DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+  pickSets       PickSet[]
+}
+
+model Season {
+  id        String   @id @default(cuid())
+  year      Int      @unique
+  isCurrent Boolean  @default(false)
+  weeks     Week[]
+  createdAt DateTime @default(now())
+}
+
+model Week {
+  id          String       @id @default(cuid())
+  seasonId    String
+  number      Int
+  label       String
+  isCurrent   Boolean      @default(false)
+  season      Season       @relation(fields: [seasonId], references: [id])
+  games       Game[]
+  pickSets    PickSet[]
+  teamRecords TeamRecord[]
+  createdAt   DateTime     @default(now())
+
+  @@unique([seasonId, number])
+}
+
+model Team {
+  id           String       @id @default(cuid())
+  name         String       @unique
+  abbreviation String       @unique
+  espnId       String       @unique
+  homeGames    Game[]       @relation("HomeTeam")
+  awayGames    Game[]       @relation("AwayTeam")
+  wonGames     Game[]       @relation("WinnerTeam")
+  teamRecords  TeamRecord[]
+  picks        Pick[]
+  createdAt    DateTime     @default(now())
+}
+
+model TeamRecord {
+  id     String @id @default(cuid())
+  teamId String
+  weekId String
+  wins   Int    @default(0)
+  losses Int    @default(0)
+  ties   Int    @default(0)
+  team   Team   @relation(fields: [teamId], references: [id])
+  week   Week   @relation(fields: [weekId], references: [id])
+
+  @@unique([teamId, weekId])
+}
+
+model Game {
+  id         String    @id @default(cuid())
+  weekId     String
+  homeTeamId String
+  awayTeamId String
+  winnerId   String?
+  gameTime   DateTime?
+  week       Week      @relation(fields: [weekId], references: [id])
+  homeTeam   Team      @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam   Team      @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  winner     Team?     @relation("WinnerTeam", fields: [winnerId], references: [id])
+  picks      Pick[]
+  createdAt  DateTime  @default(now())
+}
+
+model PickSet {
+  id          String    @id @default(cuid())
+  userId      String
+  weekId      String
+  submittedAt DateTime?
+  lockedAt    DateTime?
+  lockedBy    String?
+  user        User      @relation(fields: [userId], references: [id])
+  week        Week      @relation(fields: [weekId], references: [id])
+  picks       Pick[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, weekId])
+}
+
+model Pick {
+  id           String   @id @default(cuid())
+  pickSetId    String
+  gameId       String
+  pickedTeamId String
+  isCorrect    Boolean?
+  editedBy     String?
+  pickSet      PickSet  @relation(fields: [pickSetId], references: [id])
+  game         Game     @relation(fields: [gameId], references: [id])
+  pickedTeam   Team     @relation(fields: [pickedTeamId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([pickSetId, gameId])
+}
+
+model AppSettings {
+  id           String  @id @default("singleton")
+  mode         String  @default("live")
+  testSeasonId String?
+  testWeekId   String?
 }
