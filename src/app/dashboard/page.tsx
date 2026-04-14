@@ -7,8 +7,8 @@ import { FavoriteTeamPicker } from "@/components/favorite-team-picker";
 import { AliasEditor } from "@/components/alias-editor";
 import { WeekHistory } from "@/components/week-history";
 import { UserNav } from "@/components/user-nav";
-import { PositionCharts } from "@/components/position-charts";
 import { getCurrentWeek } from "@/lib/nfl-data";
+import { SeasonInfoPanel } from "@/components/season-info-panel";
 
 // Force fresh DB read on every request so admin lock/unlock changes
 // are reflected immediately without stale cache
@@ -206,89 +206,16 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        {/* Season Stats card */}
-        {currentWeek && seasonStats && (
-          <div className="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-            <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-              {currentWeek.season.year} Season Stats
-            </h3>
-
-            {hasAnyStats ? (
-              <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-                {/* Correct */}
-                <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
-                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                    Correct
-                  </p>
-                  <p className="mt-1 text-3xl font-bold text-green-500">
-                    {seasonStats.totalCorrect}
-                  </p>
-                </div>
-
-                {/* Wrong */}
-                <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
-                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                    Wrong
-                  </p>
-                  <p className="mt-1 text-3xl font-bold text-red-500">
-                    {seasonStats.totalWrong}
-                  </p>
-                </div>
-
-                {/* Overall % */}
-                <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
-                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                    Overall
-                  </p>
-                  <p className={`mt-1 text-3xl font-bold ${
-                    (seasonStats.overallPct ?? 0) >= 70
-                      ? "text-green-500"
-                      : (seasonStats.overallPct ?? 0) >= 50
-                      ? "text-yellow-500"
-                      : "text-red-500"
-                  }`}>
-                    {seasonStats.overallPct ?? 0}%
-                  </p>
-                  <p className="mt-0.5 text-xs text-zinc-400">
-                    {seasonStats.totalCorrect}/{seasonStats.totalGraded} graded
-                  </p>
-                </div>
-
-                {/* Best week */}
-                <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
-                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                    Best Week
-                  </p>
-                  {seasonStats.bestPct !== null ? (
-                    <>
-                      <p className="mt-1 text-3xl font-bold text-indigo-500">
-                        {seasonStats.bestPct}%
-                      </p>
-                      <p className="mt-0.5 text-xs text-zinc-400">
-                        {seasonStats.bestWeekLabel} · {seasonStats.bestWeekCorrect}/{seasonStats.bestWeekGraded}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="mt-1 text-sm text-zinc-400">—</p>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <p className="mt-3 text-sm text-zinc-400 dark:text-zinc-500">
-                No graded results yet — your stats will appear once the admin confirms game results.
-              </p>
-            )}
-
-            {hasAnyStats && (
-              <>
-                <p className="mt-3 text-xs text-zinc-400 dark:text-zinc-500">
-                  Based on {seasonStats.weeksEntered} week{seasonStats.weeksEntered !== 1 ? "s" : ""} entered
-                  · {seasonStats.totalGraded} pick{seasonStats.totalGraded !== 1 ? "s" : ""} graded
-                </p>
-                <PositionCharts />
-              </>
-            )}
-          </div>
+        {/* Season Stats / Rules panel */}
+        {currentWeek && (
+          <SeasonInfoPanel
+            seasonYear={currentWeek.season.year}
+            seasonLabel={`${currentWeek.season.year} · ${currentWeek.label}`}
+            stats={seasonStats}
+            hasAnyStats={!!hasAnyStats}
+            timedAutolocking={currentWeek.season.timedAutolocking}
+            ruleFavouriteTeamBonusWin={currentWeek.season.ruleFavouriteTeamBonusWin}
+          />
         )}
 
         <AliasEditor initialAlias={user?.alias ?? ""} />
