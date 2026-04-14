@@ -21,6 +21,7 @@ interface WeekSummary {
   lockedForSubmission: boolean;
   confirmedAt: string | null;
   _count: { games: number; pickSets: number };
+  lmsStats: { remaining: number; total: number } | null;
 }
 
 interface SeasonSummary {
@@ -31,6 +32,8 @@ interface SeasonSummary {
   isCurrent: boolean;
   timedAutolocking: boolean;
   ruleFavouriteTeamBonusWin: boolean;
+  ruleLMS: boolean;
+  ruleLMSRound: number;
   parentSeason: { id: string; year: number; type: string } | null;
   _count: { weeks: number };
   weeks: WeekSummary[];
@@ -727,6 +730,17 @@ function SeasonDetail({
                       {w._count.pickSets}/{eligibleUsersCount} submitted
                     </span>
                   )}
+                  {season.ruleLMS && w.lmsStats && (
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+                      w.lmsStats.remaining === 0
+                        ? "bg-red-600/20 text-red-400"
+                        : w.lmsStats.remaining === w.lmsStats.total
+                        ? "bg-purple-600/20 text-purple-400"
+                        : "bg-amber-600/20 text-amber-400"
+                    }`}>
+                      ⚔️ {w.lmsStats.remaining}/{w.lmsStats.total}
+                    </span>
+                  )}
                   {w.lockedForSubmission && (
                     <span className="text-xs text-red-400">Locked</span>
                   )}
@@ -961,6 +975,8 @@ function SeasonDetail({
 
 function CustomRulesTab({ season }: { season: SeasonSummary }) {
   const [bonusWin, setBonusWin] = useState(season.ruleFavouriteTeamBonusWin);
+  const [lms, setLms] = useState(season.ruleLMS);
+  const [lmsRound, setLmsRound] = useState(season.ruleLMSRound);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -979,6 +995,57 @@ function CustomRulesTab({ season }: { season: SeasonSummary }) {
       } else {
         const d = await res.json();
         setError(d.error ?? "Failed to save");
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleLms() {
+    const next = !lms;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/seasons/${season.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ruleLMS: next }),
+      });
+      if (res.ok) {
+        setLms(next);
+      } else {
+        const d = await res.json();
+        setError(d.error ?? "Failed to save");
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function startNewLmsRound() {
+    if (
+      !window.confirm(
+        `Start Last Man Standing Round ${lmsRound + 1}?\n\nAll players are back in — but any team picked in a previous round still cannot be reused.`
+      )
+    )
+      return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/seasons/${season.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ incrementLMSRound: true }),
+      });
+      if (res.ok) {
+        setLmsRound((r) => r + 1);
+      } else {
+        const d = await res.json();
+        setError(d.error ?? "Failed to start new round");
       }
     } catch {
       setError("Network error");
@@ -1029,6 +1096,68 @@ function CustomRulesTab({ season }: { season: SeasonSummary }) {
             <span
               className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
                 bonusWin ? "translate-x-8" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* Rule: Last Man Standing */}
+      <div className="rounded-lg border border-zinc-800 bg-zinc-800/50 p-6">
+        <div className="flex items-start justify-between gap-6">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="font-medium text-zinc-100">⚔️ Last Man Standing</h3>
+              {lms && (
+                <span className="inline-flex rounded-full bg-purple-600/20 px-2 py-0.5 text-xs font-semibold text-purple-400">
+                  Active
+                </span>
+              )}
+              {lms && lmsRound > 1 && (
+                <span className="inline-flex rounded-full bg-zinc-700 px-2 py-0.5 text-xs font-medium text-zinc-300">
+                  Round {lmsRound}
+                </span>
+              )}
+            </div>
+            <p className="mt-2 text-sm text-zinc-400">
+              Each week players pick <strong className="text-zinc-300">one team</strong> to win. If
+              that team loses (or ties), they are eliminated from Last Man Standing — but can still
+              submit regular picks. Teams cannot be reused across the season.
+            </p>
+            <p className="mt-1.5 text-xs text-zinc-600">
+              Teams on a BYE week are not selectable. Elimination is applied automatically when the
+              week is confirmed. A dedicated leaderboard tracks who is still standing.
+            </p>
+            {lms && (
+              <div className="mt-4 border-t border-zinc-700/50 pt-4">
+                <p className="mb-2 text-xs text-zinc-400">
+                  {lmsRound === 1
+                    ? "Currently on Round 1."
+                    : `Currently on Round ${lmsRound}.`}{" "}
+                  Starting a new round resets elimination status — everyone is back in. Previously
+                  picked teams still cannot be reused.
+                </p>
+                <button
+                  onClick={startNewLmsRound}
+                  disabled={saving}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-purple-600/20 px-3 py-1.5 text-xs font-medium text-purple-300 transition hover:bg-purple-600/30 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  ⚔️ Start Round {lmsRound + 1}
+                </button>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={toggleLms}
+            disabled={saving}
+            aria-label={`${lms ? "Disable" : "Enable"} Last Man Standing`}
+            className={`relative inline-flex h-7 w-14 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+              lms ? "bg-purple-600" : "bg-zinc-600"
+            }`}
+          >
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                lms ? "translate-x-8" : "translate-x-1"
               }`}
             />
           </button>

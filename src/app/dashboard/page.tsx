@@ -215,6 +215,7 @@ export default async function DashboardPage() {
             hasAnyStats={!!hasAnyStats}
             timedAutolocking={currentWeek.season.timedAutolocking}
             ruleFavouriteTeamBonusWin={currentWeek.season.ruleFavouriteTeamBonusWin}
+            ruleLMS={currentWeek.season.ruleLMS}
           />
         )}
 

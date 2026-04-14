@@ -84,7 +84,20 @@ export async function GET(request: Request) {
     include: { season: { select: { id: true, year: true } } },
   });
 
-  return NextResponse.json({ week, pickSets, weeks, games });
+  // LMS picks for this week (only when ruleLMS is enabled)
+  const ruleLMS = week.season.ruleLMS ?? false;
+  const lmsPicksByUserId: Record<string, { teamId: string | null; eliminated: boolean; team: { id: string; name: string; abbreviation: string; espnId: string } | null }> = {};
+  if (ruleLMS) {
+    const lmsPicks = await prisma.lmsPick.findMany({
+      where: { weekId: week.id },
+      select: { userId: true, teamId: true, eliminated: true, team: { select: { id: true, name: true, abbreviation: true, espnId: true } } },
+    });
+    for (const p of lmsPicks) {
+      lmsPicksByUserId[p.userId] = { teamId: p.teamId, eliminated: p.eliminated, team: p.team };
+    }
+  }
+
+  return NextResponse.json({ week, pickSets, weeks, games, ruleLMS, lmsPicksByUserId });
 }
 
 export async function PATCH(request: Request) {

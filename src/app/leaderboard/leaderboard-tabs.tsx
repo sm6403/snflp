@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { SeasonLeaderboard } from "@/components/season-leaderboard";
 import { WeeklyLeaderboard } from "@/components/weekly-leaderboard";
+import { LmsLeaderboard } from "@/components/lms-leaderboard";
 import type { ChartSeries } from "@/components/leaderboard-chart";
 
-type Tab = "season" | "weekly";
+type Tab = "season" | "weekly" | "lms";
 
 export interface ChartHistory {
   confirmedWeeks: Array<{ weekId: string; weekNumber: number; weekLabel: string }>;
@@ -76,6 +77,16 @@ export function LeaderboardTabs({ userId }: { userId: string }) {
         >
           Weekly
         </button>
+        <button
+          onClick={() => setActiveTab("lms")}
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === "lms"
+              ? "border-b-2 border-indigo-500 text-indigo-600 dark:text-indigo-400"
+              : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+          }`}
+        >
+          ⚔️ LMS
+        </button>
       </div>
 
       {/* Tab content */}
@@ -86,13 +97,15 @@ export function LeaderboardTabs({ userId }: { userId: string }) {
           chartSeries={chartHistory ? toSeasonSeries(chartHistory) : []}
           totalPlayers={chartHistory?.totalPlayers ?? 1}
         />
-      ) : (
+      ) : activeTab === "weekly" ? (
         <WeeklyLeaderboard
           userId={userId}
           chartWeeks={chartWeeks}
           chartSeries={chartHistory ? toWeeklySeries(chartHistory) : []}
           totalPlayers={chartHistory?.totalPlayers ?? 1}
         />
+      ) : (
+        <LmsLeaderboard currentUserId={userId} />
       )}
     </div>
   );

@@ -20,6 +20,7 @@ model User {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   pickSets          PickSet[]
+  lmsPicks          LmsPick[]
 }
 
 model Season {
@@ -30,10 +31,13 @@ model Season {
   isCurrent        Boolean  @default(false)
   timedAutolocking           Boolean  @default(false)
   ruleFavouriteTeamBonusWin  Boolean  @default(false)
+  ruleLMS                    Boolean  @default(false)
+  ruleLMSRound               Int      @default(1)
   parentSeasonId   String?
   parentSeason     Season?  @relation("PostSeason", fields: [parentSeasonId], references: [id])
   childSeasons     Season[] @relation("PostSeason")
   weeks            Week[]
+  lmsPicks         LmsPick[]
   createdAt        DateTime @default(now())
 
   @@unique([year, type])
@@ -52,6 +56,7 @@ model Week {
   games       Game[]
   pickSets    PickSet[]
   teamRecords TeamRecord[]
+  lmsPicks    LmsPick[]
   createdAt   DateTime     @default(now())
 
   @@unique([seasonId, number])
@@ -67,6 +72,7 @@ model Team {
   wonGames     Game[]       @relation("WinnerTeam")
   teamRecords  TeamRecord[]
   picks        Pick[]
+  lmsPicks     LmsPick[]
   createdAt    DateTime     @default(now())
 }
 
@@ -145,6 +151,25 @@ model AdminUser {
   disabled       Boolean   @default(false)
   createdAt      DateTime  @default(now())
   lastLoginAt    DateTime?
+}
+
+model LmsPick {
+  id         String   @id @default(cuid())
+  userId     String
+  weekId     String
+  seasonId   String
+  teamId     String?  // null = no pick submitted (auto-eliminated)
+  lmsRound   Int      @default(1)
+  eliminated Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  week   Week   @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  team   Team?  @relation(fields: [teamId], references: [id])
+
+  @@unique([userId, weekId])
 }
 
 model AdminAuditLog {

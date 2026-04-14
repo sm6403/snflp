@@ -27,7 +27,7 @@ export async function POST(request: Request) {
       games: {
         select: { id: true, homeTeamId: true, awayTeamId: true, winnerId: true, isTie: true },
       },
-      season: { select: { id: true, ruleFavouriteTeamBonusWin: true } },
+      season: { select: { id: true, ruleFavouriteTeamBonusWin: true, ruleLMS: true, ruleLMSRound: true } },
     },
   });
   if (!week) {
@@ -189,6 +189,63 @@ export async function POST(request: Request) {
         data: { isCorrect: true },
       });
       gradedCount += bonusPickIds.length;
+    }
+  }
+
+  // ── Phase 5: Last Man Standing elimination ──────────────────────────────────
+  // If LMS rule is enabled:
+  //  a) Mark picks where the chosen team lost/tied as eliminated
+  //  b) Auto-eliminate eligible users who didn't submit an LMS pick this week
+  //     (unless they were already eliminated in a prior week)
+  if (week.season.ruleLMS) {
+    // Build set of teams that lost this week
+    const losingTeamIds = new Set<string>();
+    for (const game of week.games) {
+      if (game.winnerId) {
+        const loserId = game.homeTeamId === game.winnerId ? game.awayTeamId : game.homeTeamId;
+        losingTeamIds.add(loserId);
+      } else if (game.isTie) {
+        losingTeamIds.add(game.homeTeamId);
+        losingTeamIds.add(game.awayTeamId);
+      }
+    }
+
+    const currentRound = week.season.ruleLMSRound;
+
+    // Grade submitted LMS picks for the current round
+    const weekLmsPicks = await prisma.lmsPick.findMany({
+      where: { weekId, lmsRound: currentRound },
+    });
+    for (const pick of weekLmsPicks) {
+      if (pick.teamId && losingTeamIds.has(pick.teamId)) {
+        await prisma.lmsPick.update({ where: { id: pick.id }, data: { eliminated: true } });
+      }
+    }
+
+    // Auto-eliminate eligible users who didn't submit an LMS pick this week,
+    // unless they were already eliminated earlier in THIS round.
+    const eligibleUsers = await prisma.user.findMany({
+      where: { showOnLeaderboard: true },
+      select: { id: true },
+    });
+
+    const submittedUserIds = new Set(weekLmsPicks.map((p) => p.userId));
+
+    // Already eliminated in a prior week of the current round
+    const alreadyEliminated = await prisma.lmsPick.findMany({
+      where: { seasonId: week.seasonId, lmsRound: currentRound, eliminated: true, weekId: { not: weekId } },
+      select: { userId: true },
+    });
+    const alreadyEliminatedIds = new Set(alreadyEliminated.map((p) => p.userId));
+
+    for (const user of eligibleUsers) {
+      if (!submittedUserIds.has(user.id) && !alreadyEliminatedIds.has(user.id)) {
+        await prisma.lmsPick.upsert({
+          where: { userId_weekId: { userId: user.id, weekId } },
+          create: { userId: user.id, weekId, seasonId: week.seasonId, lmsRound: currentRound, eliminated: true },
+          update: { eliminated: true },
+        });
+      }
     }
   }
 

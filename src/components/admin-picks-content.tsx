@@ -38,6 +38,12 @@ interface PickSet {
   picks: Pick[];
 }
 
+interface LmsPick {
+  teamId: string | null;
+  eliminated: boolean;
+  team: { id: string; name: string; abbreviation: string; espnId: string } | null;
+}
+
 interface WeekOption {
   id: string;
   number: number;
@@ -91,9 +97,11 @@ function scoreLabel(picks: Pick[]) {
 
 function PickSetRow({
   pickSet,
+  lmsPick,
   onRefresh,
 }: {
   pickSet: PickSet;
+  lmsPick?: LmsPick | null;
   onRefresh: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -163,6 +171,35 @@ function PickSetRow({
 
       {expanded && (
         <div className="border-t border-zinc-800 px-4 pb-4 pt-3">
+          {/* LMS pick */}
+          {lmsPick !== undefined && lmsPick !== null && (
+            <div className="mb-3 flex items-center gap-2 rounded-lg border border-purple-700/30 bg-purple-900/10 px-3 py-2">
+              <span className="text-xs font-semibold text-purple-400">⚔️ LMS Pick</span>
+              {lmsPick.team ? (
+                <>
+                  <img
+                    src={`https://a.espncdn.com/i/teamlogos/nfl/500/${lmsPick.team.espnId}.png`}
+                    alt={lmsPick.team.abbreviation}
+                    className="h-5 w-5 object-contain"
+                  />
+                  <span className="text-sm font-medium text-zinc-100">{lmsPick.team.abbreviation}</span>
+                  {lmsPick.eliminated ? (
+                    <span className="rounded bg-red-600/20 px-1.5 py-0.5 text-xs text-red-400">💀 Eliminated</span>
+                  ) : (
+                    <span className="rounded bg-green-600/20 px-1.5 py-0.5 text-xs text-green-400">✓ Still in</span>
+                  )}
+                </>
+              ) : (
+                <span className="text-xs text-zinc-500">No LMS pick submitted</span>
+              )}
+            </div>
+          )}
+          {lmsPick === null && (
+            <div className="mb-3 flex items-center gap-2 rounded-lg border border-zinc-700/30 bg-zinc-800/30 px-3 py-2">
+              <span className="text-xs font-semibold text-purple-400/50">⚔️ LMS Pick</span>
+              <span className="text-xs text-zinc-600">No LMS pick submitted</span>
+            </div>
+          )}
           {pickSet.picks.length === 0 ? (
             <p className="text-sm text-zinc-500">No picks submitted yet.</p>
           ) : (
@@ -755,6 +792,8 @@ export function AdminPicksContent() {
   const [selectedWeekId, setSelectedWeekId] = useState<string>(urlWeekId ?? "");
   const [loading, setLoading] = useState(true);
   const [weekActionLoading, setWeekActionLoading] = useState(false);
+  const [ruleLMS, setRuleLMS] = useState(false);
+  const [lmsPicksByUserId, setLmsPicksByUserId] = useState<Record<string, LmsPick>>({});
 
   const fetchPicks = useCallback(async (weekId?: string) => {
     setLoading(true);
@@ -766,6 +805,8 @@ export function AdminPicksContent() {
       setPickSets(data.pickSets);
       setGames(data.games ?? []);
       setWeeks(data.weeks);
+      setRuleLMS(data.ruleLMS ?? false);
+      setLmsPicksByUserId(data.lmsPicksByUserId ?? {});
       if (!selectedWeekId && data.week) {
         setSelectedWeekId(data.week.id);
       }
@@ -931,7 +972,12 @@ export function AdminPicksContent() {
               ) : (
                 <div className="space-y-3">
                   {pickSets.map((ps) => (
-                    <PickSetRow key={ps.id} pickSet={ps} onRefresh={refresh} />
+                    <PickSetRow
+                      key={ps.id}
+                      pickSet={ps}
+                      lmsPick={ruleLMS ? (lmsPicksByUserId[ps.user.id] ?? null) : undefined}
+                      onRefresh={refresh}
+                    />
                   ))}
                 </div>
               )}
