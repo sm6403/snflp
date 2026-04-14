@@ -678,6 +678,69 @@ function LockTimeControl({
   );
 }
 
+// ─── CSV Export ───────────────────────────────────────────────────────────────
+
+function exportPicksAsCsv(week: Week, games: Game[], pickSets: PickSet[]) {
+  // Helper: wrap a cell value in quotes and escape any internal quotes
+  const cell = (v: string) => `"${v.replace(/"/g, '""')}"`;
+
+  // ── Header row ──────────────────────────────────────────────────────────────
+  // Fixed columns: Player | Email | Status | Score
+  // Then one column per game: "AWAY @ HOME (result)"
+  const gameHeaders = games.map((g) => {
+    const result = g.isTie ? "TIE" : g.winner ? `${g.winner.abbreviation} won` : "TBD";
+    return cell(`${g.awayTeam.abbreviation} @ ${g.homeTeam.abbreviation} [${result}]`);
+  });
+
+  const header = [
+    cell("Player"),
+    cell("Email"),
+    cell("Status"),
+    cell("Score"),
+    ...gameHeaders,
+  ].join(",");
+
+  // ── Data rows ────────────────────────────────────────────────────────────────
+  // Build a lookup: gameId → pick for quick access
+  const rows = pickSets.map((ps) => {
+    const displayName = ps.user.alias ?? ps.user.name ?? ps.user.email;
+    const status = ps.lockedAt ? "Locked" : ps.submittedAt ? "Unlocked" : "Pending";
+
+    const graded = ps.picks.filter((p) => p.isCorrect !== null);
+    const correct = graded.filter((p) => p.isCorrect === true).length;
+    const score =
+      graded.length > 0
+        ? `${correct}/${graded.length} (${Math.round((correct / graded.length) * 100)}%)`
+        : "Not graded";
+
+    const pickByGame = Object.fromEntries(ps.picks.map((p) => [p.gameId, p]));
+
+    const gameCells = games.map((g) => {
+      const pick = pickByGame[g.id];
+      if (!pick) return cell("—");
+
+      const abbr = pick.pickedTeam.abbreviation;
+      if (pick.isCorrect === true) return cell(`${abbr} ✓`);
+      if (pick.isCorrect === false) return cell(`${abbr} ✗`);
+      return cell(abbr);
+    });
+
+    return [cell(displayName), cell(ps.user.email), cell(status), cell(score), ...gameCells].join(
+      ","
+    );
+  });
+
+  // ── Assemble and trigger download ────────────────────────────────────────────
+  const csv = [header, ...rows].join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `picks-${week.season.year}-${week.label.replace(/\s+/g, "-")}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function AdminPicksContent() {
@@ -773,6 +836,17 @@ export function AdminPicksContent() {
                 </option>
               ))}
             </select>
+          )}
+          {week && pickSets.length > 0 && (
+            <button
+              onClick={() => exportPicksAsCsv(week, games, pickSets)}
+              className="ml-auto flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 2v8m0 0-3-3m3 3 3-3M3 13h10" />
+              </svg>
+              Export CSV
+            </button>
           )}
         </div>
 
