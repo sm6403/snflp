@@ -2,7 +2,6 @@ import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { unstable_noStore as noStore } from "next/cache";
 import { SignOutButton } from "@/components/sign-out-button";
 import { FavoriteTeamPicker } from "@/components/favorite-team-picker";
 import { AliasEditor } from "@/components/alias-editor";
@@ -11,8 +10,11 @@ import { UserNav } from "@/components/user-nav";
 import { PositionCharts } from "@/components/position-charts";
 import { getCurrentWeek } from "@/lib/nfl-data";
 
+// Force fresh DB read on every request so admin lock/unlock changes
+// are reflected immediately without stale cache
+export const dynamic = "force-dynamic";
+
 export default async function DashboardPage() {
-  noStore(); // always fetch fresh — admin lock/unlock changes must reflect immediately
   const session = await auth();
 
   if (!session?.user?.id) {
