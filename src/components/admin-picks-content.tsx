@@ -717,11 +717,11 @@ function exportPicksAsCsv(week: Week, games: Game[], pickSets: PickSet[]) {
 
     const gameCells = games.map((g) => {
       const pick = pickByGame[g.id];
-      if (!pick) return cell("—");
+      if (!pick) return cell("No pick");
 
       const abbr = pick.pickedTeam.abbreviation;
-      if (pick.isCorrect === true) return cell(`${abbr} ✓`);
-      if (pick.isCorrect === false) return cell(`${abbr} ✗`);
+      if (pick.isCorrect === true) return cell(`${abbr} (correct)`);
+      if (pick.isCorrect === false) return cell(`${abbr} (wrong)`);
       return cell(abbr);
     });
 
@@ -731,7 +731,8 @@ function exportPicksAsCsv(week: Week, games: Game[], pickSets: PickSet[]) {
   });
 
   // ── Assemble and trigger download ────────────────────────────────────────────
-  const csv = [header, ...rows].join("\r\n");
+  // Prepend UTF-8 BOM (\uFEFF) so Excel on Windows opens the file correctly
+  const csv = "\uFEFF" + [header, ...rows].join("\r\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
