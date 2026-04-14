@@ -10,6 +10,112 @@ interface AppSettings {
 
 type BulkLockState = "idle" | "locking" | "unlocking";
 
+// ─── Admin password change ────────────────────────────────────────────────────
+
+function AdminPasswordSection({ isSuperAdmin }: { isSuperAdmin: boolean }) {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+
+  if (isSuperAdmin) {
+    return (
+      <div className="rounded-lg border border-zinc-800 bg-zinc-800/50 p-6">
+        <h3 className="font-medium text-zinc-100">Change Password</h3>
+        <p className="mt-2 text-sm text-zinc-500">
+          The superadmin password is set via environment variables and cannot be changed here.
+        </p>
+      </div>
+    );
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setStatus(null);
+    if (next !== confirm) {
+      setStatus({ type: "error", msg: "New passwords do not match." });
+      return;
+    }
+    if (next.length < 8) {
+      setStatus({ type: "error", msg: "New password must be at least 8 characters." });
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/password", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword: current, newPassword: next }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setStatus({ type: "success", msg: "Password changed successfully." });
+        setCurrent(""); setNext(""); setConfirm("");
+      } else {
+        setStatus({ type: "error", msg: d.error ?? "Failed to change password." });
+      }
+    } catch {
+      setStatus({ type: "error", msg: "Network error." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-800/50 p-6">
+      <h3 className="mb-4 font-medium text-zinc-100">Change Password</h3>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-zinc-400">Current password</label>
+          <input
+            type="password"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+            autoComplete="current-password"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-zinc-400">New password</label>
+          <input
+            type="password"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            autoComplete="new-password"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+          />
+          <p className="mt-1 text-xs text-zinc-600">Minimum 8 characters.</p>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-zinc-400">Confirm new password</label>
+          <input
+            type="password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            autoComplete="new-password"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+          />
+        </div>
+        {status && (
+          <p className={`text-sm ${status.type === "success" ? "text-green-400" : "text-red-400"}`}>
+            {status.msg}
+          </p>
+        )}
+        <div>
+          <button
+            type="submit"
+            disabled={saving || !current || !next || !confirm}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {saving ? "Saving…" : "Change Password"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 export function AdminSettingsContent() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [saving, setSaving] = useState(false);
@@ -18,12 +124,14 @@ export function AdminSettingsContent() {
   const [loading, setLoading] = useState(true);
   const [bulkLockState, setBulkLockState] = useState<BulkLockState>("idle");
   const [bulkLockMsg, setBulkLockMsg] = useState<string | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   const fetchSettings = useCallback(async () => {
     const res = await fetch("/api/admin/settings");
     if (res.ok) {
       const data = await res.json();
       setSettings(data.settings);
+      setIsSuperAdmin(data.isSuperAdmin ?? false);
     }
     setLoading(false);
   }, []);
@@ -182,6 +290,9 @@ export function AdminSettingsContent() {
             </div>
 
             {saved && <p className="text-sm text-green-400">Settings saved.</p>}
+
+            {/* Admin password change */}
+            <AdminPasswordSection isSuperAdmin={isSuperAdmin} />
           </div>
         )}
       </main>

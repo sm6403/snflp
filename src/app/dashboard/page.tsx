@@ -4,7 +4,6 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { SignOutButton } from "@/components/sign-out-button";
 import { FavoriteTeamPicker } from "@/components/favorite-team-picker";
-import { AliasEditor } from "@/components/alias-editor";
 import { WeekHistory } from "@/components/week-history";
 import { UserNav } from "@/components/user-nav";
 import { getCurrentWeek } from "@/lib/nfl-data";
@@ -219,7 +218,6 @@ export default async function DashboardPage() {
           />
         )}
 
-        <AliasEditor initialAlias={user?.alias ?? ""} />
         <FavoriteTeamPicker
           initialTeam={user?.favoriteTeam ?? "Los Angeles Rams"}
           initialLocked={user?.favoriteTeamLocked ?? false}
