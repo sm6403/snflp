@@ -199,12 +199,10 @@ function TeamButton({
     const inner = (
       <>
         <img src={logoUrl} alt={team.name} className="h-7 w-7 flex-shrink-0 object-contain" />
-        <div className="flex min-w-0 flex-1 flex-col justify-center">
-          <div className="flex items-center gap-1">
-            <span className="text-xs font-semibold text-zinc-100">{team.abbreviation}</span>
-            {resultDot}
-          </div>
-          <span className="text-[10px] leading-tight text-zinc-500">{recordLabel(team.teamRecords)}</span>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <span className="text-xs font-semibold text-zinc-100">{team.abbreviation}</span>
+          <span className="text-[10px] text-zinc-500">{recordLabel(team.teamRecords)}</span>
+          {resultDot}
         </div>
       </>
     );
