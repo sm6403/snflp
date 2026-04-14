@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AdminLogoutButton } from "./admin-logout-button";
 import { NFL_TEAMS, getTeamLogoUrl } from "@/lib/nfl-teams";
 
@@ -42,11 +42,13 @@ export function AdminManageUser({ userId }: { userId: string }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ [field]: value }),
     });
+    const data = await res.json();
     if (res.ok) {
-      const data = await res.json();
       setUser(data.user);
       setMessage("Updated successfully");
       setTimeout(() => setMessage(""), 3000);
+    } else {
+      setMessage(`Error: ${data.error ?? res.status}`);
     }
   }
 
@@ -304,11 +306,15 @@ function FavoriteTeamForm({
   onToggleLock: () => void;
 }) {
   const [selected, setSelected] = useState(currentTeam);
+  const prevTeamRef = useRef(currentTeam);
 
-  // Keep local select in sync when the parent value changes after a save
-  if (selected !== currentTeam) {
-    setSelected(currentTeam);
-  }
+  // Sync dropdown only when the parent value changes after a successful save
+  useEffect(() => {
+    if (prevTeamRef.current !== currentTeam) {
+      prevTeamRef.current = currentTeam;
+      setSelected(currentTeam);
+    }
+  }, [currentTeam]);
 
   return (
     <div className="space-y-4">
