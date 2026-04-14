@@ -83,11 +83,12 @@ export async function GET(request: Request) {
     },
   });
 
-  // Resolve favourite team ID only for the current user's own picks
+  // Resolve favourite team ID for whoever's picks are being shown
+  // (needed for the bonus win highlight when viewing another user's results)
   let favoriteTeamId: string | null = null;
-  if (!isViewingOther) {
+  {
     const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
+      where: { id: targetUserId },
       select: { favoriteTeam: true },
     });
     if (user?.favoriteTeam) {
