@@ -6,6 +6,10 @@ import { verifyAdminSession } from "@/lib/admin-auth";
 // Bulk-grades all picks for the week, stamps Week.confirmedAt, and
 // recomputes cumulative team records (W-L-T) for all teams that have
 // played confirmed games in this season.
+//
+// Intentionally split into small sequential operations rather than one
+// large transaction — Neon's connection pooler drops long-running
+// transactions, causing network errors on weeks with many games/players.
 export async function POST(request: Request) {
   if (!(await verifyAdminSession())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -22,7 +26,7 @@ export async function POST(request: Request) {
       games: {
         select: { id: true, homeTeamId: true, awayTeamId: true, winnerId: true, isTie: true },
       },
-      season: { select: { ruleFavouriteTeamBonusWin: true } },
+      season: { select: { id: true, ruleFavouriteTeamBonusWin: true } },
     },
   });
   if (!week) {
@@ -48,9 +52,9 @@ export async function POST(request: Request) {
 
   let gradedCount = 0;
 
-  await prisma.$transaction(async (tx) => {
-    // ── Grade picks ──────────────────────────────────────────────────────────
-    for (const game of week.games) {
+  // ── Phase 1: Grade picks — one small transaction per game ────────────────────
+  for (const game of week.games) {
+    await prisma.$transaction(async (tx) => {
       // Reset any existing grades (handles re-confirmation)
       await tx.pick.updateMany({
         where: { gameId: game.id },
@@ -58,12 +62,12 @@ export async function POST(request: Request) {
       });
 
       if (game.isTie) {
-        // Tied game: everyone loses — all picks are incorrect
+        // Tied game: everyone loses
         await tx.pick.updateMany({
           where: { gameId: game.id },
           data: { isCorrect: false },
         });
-        continue;
+        return;
       }
 
       const winnerId = game.winnerId!;
@@ -85,52 +89,54 @@ export async function POST(request: Request) {
       });
 
       gradedCount += correct.count;
-    }
-
-    // Stamp the week as confirmed (idempotent — updates timestamp on re-confirm)
-    await tx.week.update({
-      where: { id: weekId },
-      data: { confirmedAt: new Date() },
     });
+  }
 
-    // ── Recompute team records ────────────────────────────────────────────────
-    // Fetch all previously confirmed games in this season (other weeks)
-    const previousGames = await tx.game.findMany({
-      where: {
-        weekId: { not: weekId },
-        week: { seasonId: week.seasonId, confirmedAt: { not: null } },
-      },
-      select: { homeTeamId: true, awayTeamId: true, winnerId: true, isTie: true },
-    });
+  // ── Phase 2: Stamp the week as confirmed ─────────────────────────────────────
+  await prisma.week.update({
+    where: { id: weekId },
+    data: { confirmedAt: new Date() },
+  });
 
-    // Combine with this week's just-confirmed games
-    const allConfirmedGames = [
-      ...previousGames,
-      ...week.games.map((g) => ({
-        homeTeamId: g.homeTeamId,
-        awayTeamId: g.awayTeamId,
-        winnerId: g.winnerId,
-        isTie: g.isTie,
-      })),
-    ];
+  // ── Phase 3: Recompute cumulative team records ───────────────────────────────
+  // Fetch all previously confirmed games in this season (other weeks)
+  const previousGames = await prisma.game.findMany({
+    where: {
+      weekId: { not: weekId },
+      week: { seasonId: week.seasonId, confirmedAt: { not: null } },
+    },
+    select: { homeTeamId: true, awayTeamId: true, winnerId: true, isTie: true },
+  });
 
-    // Accumulate W-L-T per team
-    const records = new Map<string, { wins: number; losses: number; ties: number }>();
-    for (const game of allConfirmedGames) {
-      for (const teamId of [game.homeTeamId, game.awayTeamId]) {
-        if (!records.has(teamId)) records.set(teamId, { wins: 0, losses: 0, ties: 0 });
-        const r = records.get(teamId)!;
-        if (game.isTie) {
-          r.ties++;
-        } else if (game.winnerId === teamId) {
-          r.wins++;
-        } else if (game.winnerId !== null) {
-          r.losses++;
-        }
+  // Combine with this week's just-confirmed games
+  const allConfirmedGames = [
+    ...previousGames,
+    ...week.games.map((g) => ({
+      homeTeamId: g.homeTeamId,
+      awayTeamId: g.awayTeamId,
+      winnerId: g.winnerId,
+      isTie: g.isTie,
+    })),
+  ];
+
+  // Accumulate W-L-T per team
+  const records = new Map<string, { wins: number; losses: number; ties: number }>();
+  for (const game of allConfirmedGames) {
+    for (const teamId of [game.homeTeamId, game.awayTeamId]) {
+      if (!records.has(teamId)) records.set(teamId, { wins: 0, losses: 0, ties: 0 });
+      const r = records.get(teamId)!;
+      if (game.isTie) {
+        r.ties++;
+      } else if (game.winnerId === teamId) {
+        r.wins++;
+      } else if (game.winnerId !== null) {
+        r.losses++;
       }
     }
+  }
 
-    // Upsert a TeamRecord for each team keyed to the just-confirmed week
+  // Upsert team records in a single small transaction
+  await prisma.$transaction(async (tx) => {
     for (const [teamId, record] of records) {
       await tx.teamRecord.upsert({
         where: { teamId_weekId: { teamId, weekId } },
@@ -138,52 +144,52 @@ export async function POST(request: Request) {
         update: record,
       });
     }
+  });
 
-    // ── Custom rule: Favourite Team Bonus Win ────────────────────────────────
-    // Any pick for a player's favourite team counts as correct even if that
-    // team lost. Applied after normal grading so it overrides incorrect picks.
-    if (week.season.ruleFavouriteTeamBonusWin) {
-      // Fetch all pick sets for this week including the user's favourite team name
-      const pickSetsWithUsers = await tx.pickSet.findMany({
-        where: { weekId },
-        select: {
-          user: { select: { favoriteTeam: true } },
-          picks: {
-            where: { isCorrect: false },
-            select: { id: true, pickedTeamId: true },
-          },
+  // ── Phase 4: Custom rule — Favourite Team Bonus Win ──────────────────────────
+  // Any pick for a player's favourite team counts as correct even if that
+  // team lost. Applied after normal grading so it overrides incorrect picks.
+  if (week.season.ruleFavouriteTeamBonusWin) {
+    // Fetch pick sets + user favourite teams
+    const pickSetsWithUsers = await prisma.pickSet.findMany({
+      where: { weekId },
+      select: {
+        user: { select: { favoriteTeam: true } },
+        picks: {
+          where: { isCorrect: false },
+          select: { id: true, pickedTeamId: true },
         },
-      });
+      },
+    });
 
-      // Resolve unique favourite team names → IDs in one query
-      const favTeamNames = [...new Set(pickSetsWithUsers.map((ps) => ps.user.favoriteTeam))];
-      const favTeams = await tx.team.findMany({
-        where: { name: { in: favTeamNames } },
-        select: { id: true, name: true },
-      });
-      const nameToId = new Map(favTeams.map((t) => [t.name, t.id]));
+    // Resolve unique favourite team names → IDs in one query
+    const favTeamNames = [...new Set(pickSetsWithUsers.map((ps) => ps.user.favoriteTeam))];
+    const favTeams = await prisma.team.findMany({
+      where: { name: { in: favTeamNames } },
+      select: { id: true, name: true },
+    });
+    const nameToId = new Map(favTeams.map((t) => [t.name, t.id]));
 
-      // Collect IDs of incorrect picks that should be overridden to correct
-      const bonusPickIds: string[] = [];
-      for (const ps of pickSetsWithUsers) {
-        const favTeamId = nameToId.get(ps.user.favoriteTeam);
-        if (!favTeamId) continue;
-        for (const pick of ps.picks) {
-          if (pick.pickedTeamId === favTeamId) {
-            bonusPickIds.push(pick.id);
-          }
+    // Collect IDs of incorrect picks that should be overridden to correct
+    const bonusPickIds: string[] = [];
+    for (const ps of pickSetsWithUsers) {
+      const favTeamId = nameToId.get(ps.user.favoriteTeam);
+      if (!favTeamId) continue;
+      for (const pick of ps.picks) {
+        if (pick.pickedTeamId === favTeamId) {
+          bonusPickIds.push(pick.id);
         }
       }
-
-      if (bonusPickIds.length > 0) {
-        await tx.pick.updateMany({
-          where: { id: { in: bonusPickIds } },
-          data: { isCorrect: true },
-        });
-        gradedCount += bonusPickIds.length;
-      }
     }
-  });
+
+    if (bonusPickIds.length > 0) {
+      await prisma.pick.updateMany({
+        where: { id: { in: bonusPickIds } },
+        data: { isCorrect: true },
+      });
+      gradedCount += bonusPickIds.length;
+    }
+  }
 
   const updatedWeek = await prisma.week.findUnique({ where: { id: weekId } });
   return NextResponse.json({ week: updatedWeek, gradedCount });
