@@ -56,10 +56,11 @@ export async function GET(request: Request) {
   // Determine season-level flags
   const season = await prisma.season.findUnique({
     where: { id: week.seasonId },
-    select: { timedAutolocking: true, ruleFavouriteTeamBonusWin: true },
+    select: { timedAutolocking: true, ruleFavouriteTeamBonusWin: true, ruleLMS: true },
   });
   const timedAutolocking = season?.timedAutolocking ?? false;
   const ruleFavouriteTeamBonusWin = season?.ruleFavouriteTeamBonusWin ?? false;
+  const ruleLMS = season?.ruleLMS ?? false;
 
   // Compute per-game isTimeLocked: locked when gameTime ≤ 1 min from now
   const now = new Date();
@@ -108,6 +109,37 @@ export async function GET(request: Request) {
       select: { alias: true, name: true },
     });
   }
+
+  // ── LMS data (only when rule is enabled) ────────────────────────────────────
+  let lmsPick: { teamId: string; eliminated: boolean; team: { id: string; name: string; abbreviation: string; espnId: string } } | null = null;
+  let lmsPreviousTeamIds: string[] = [];
+  let lmsPreviousPicks: { teamId: string; week: { number: number; label: string }; team: { abbreviation: string; espnId: string } }[] = [];
+  let lmsByeTeamIds: string[] = [];
+  let allTeams: { id: string; name: string; abbreviation: string; espnId: string }[] = [];
+
+  if (ruleLMS) {
+    allTeams = await prisma.team.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, abbreviation: true, espnId: true },
+    });
+
+    // Teams playing this week — BYE teams are those NOT in this set
+    const playingTeamIds = new Set(games.flatMap((g) => [g.homeTeamId, g.awayTeamId]));
+    lmsByeTeamIds = allTeams.filter((t) => !playingTeamIds.has(t.id)).map((t) => t.id);
+
+    lmsPick = await prisma.lmsPick.findUnique({
+      where: { userId_weekId: { userId: targetUserId, weekId: week.id } },
+      select: { teamId: true, eliminated: true, team: { select: { id: true, name: true, abbreviation: true, espnId: true } } },
+    });
+
+    lmsPreviousPicks = await prisma.lmsPick.findMany({
+      where: { userId: targetUserId, seasonId: week.seasonId, weekId: { not: week.id } },
+      orderBy: { week: { number: "asc" } },
+      select: { teamId: true, week: { select: { number: true, label: true } }, team: { select: { abbreviation: true, espnId: true } } },
+    });
+    lmsPreviousTeamIds = lmsPreviousPicks.map((p) => p.teamId);
+  }
+  // ────────────────────────────────────────────────────────────────────────────
 
   // ── Recent form (last ≤3 confirmed weeks before this one) ──────────────────
   const recentConfirmedWeeks = await prisma.week.findMany({
@@ -172,6 +204,12 @@ export async function GET(request: Request) {
     viewingUser,
     timedAutolocking,
     ruleFavouriteTeamBonusWin,
+    ruleLMS,
+    lmsPick,
+    lmsPreviousTeamIds,
+    lmsPreviousPicks,
+    lmsByeTeamIds,
+    allTeams: ruleLMS ? allTeams : undefined,
     teamForm,
   });
 }
@@ -182,8 +220,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { picks } = await request.json() as {
+  const { picks, lmsTeamId } = await request.json() as {
     picks: Array<{ gameId: string; pickedTeamId: string }>;
+    lmsTeamId?: string;
   };
 
   if (!Array.isArray(picks) || picks.length === 0) {
@@ -211,12 +250,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Picks are locked" }, { status: 409 });
   }
 
-  // Fetch season to check timed autolocking
+  // Fetch season flags
   const weekSeason = await prisma.season.findUnique({
     where: { id: week.seasonId },
-    select: { timedAutolocking: true },
+    select: { timedAutolocking: true, ruleLMS: true },
   });
   const timedAutolock = weekSeason?.timedAutolocking ?? false;
+  const postRuleLMS = weekSeason?.ruleLMS ?? false;
 
   // Validate: one pick per game, and picked team must be in that game
   const games = await getGamesForWeek(week.id);
@@ -317,6 +357,39 @@ export async function POST(request: Request) {
 
     return ps;
   });
+
+  // ── Save LMS pick ────────────────────────────────────────────────────────────
+  if (lmsTeamId && postRuleLMS) {
+    // Validate: team exists
+    const lmsTeam = await prisma.team.findUnique({ where: { id: lmsTeamId } });
+    if (!lmsTeam) {
+      return NextResponse.json({ error: "Invalid LMS team" }, { status: 400 });
+    }
+
+    // Validate: team is playing this week (not on BYE)
+    const weekGamesList = await prisma.game.findMany({
+      where: { weekId: week.id },
+      select: { homeTeamId: true, awayTeamId: true },
+    });
+    const playingIds = new Set(weekGamesList.flatMap((g) => [g.homeTeamId, g.awayTeamId]));
+    if (!playingIds.has(lmsTeamId)) {
+      return NextResponse.json({ error: "That team is on a BYE this week" }, { status: 400 });
+    }
+
+    // Validate: not already used this season (excluding current week)
+    const usedThisSeason = await prisma.lmsPick.findFirst({
+      where: { userId, seasonId: week.seasonId, teamId: lmsTeamId, weekId: { not: week.id } },
+    });
+    if (usedThisSeason) {
+      return NextResponse.json({ error: "You have already used that team this season" }, { status: 400 });
+    }
+
+    await prisma.lmsPick.upsert({
+      where: { userId_weekId: { userId, weekId: week.id } },
+      create: { userId, weekId: week.id, seasonId: week.seasonId, teamId: lmsTeamId },
+      update: { teamId: lmsTeamId, eliminated: false },
+    });
+  }
 
   return NextResponse.json({ pickSet }, { status: 200 });
 }

@@ -56,6 +56,19 @@ interface Week {
   season: { year: number };
 }
 
+interface LmsTeam {
+  id: string;
+  name: string;
+  abbreviation: string;
+  espnId: string;
+}
+
+interface LmsPreviousPick {
+  teamId: string;
+  week: { number: number; label: string };
+  team: { abbreviation: string; espnId: string };
+}
+
 function recordLabel(records: TeamRecord[]): string {
   const r = records[0];
   if (!r) return "0-0-0";
@@ -288,6 +301,13 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
   const [ruleFavouriteTeamBonusWin, setRuleFavouriteTeamBonusWin] = useState(false);
   const [favoriteTeamId, setFavoriteTeamId] = useState<string | null>(null);
   const [compact, setCompact] = useState(false);
+  // LMS state
+  const [ruleLMS, setRuleLMS] = useState(false);
+  const [lmsTeamId, setLmsTeamId] = useState<string | null>(null);
+  const [lmsPreviousTeamIds, setLmsPreviousTeamIds] = useState<string[]>([]);
+  const [lmsPreviousPicks, setLmsPreviousPicks] = useState<LmsPreviousPick[]>([]);
+  const [lmsByeTeamIds, setLmsByeTeamIds] = useState<string[]>([]);
+  const [allTeams, setAllTeams] = useState<LmsTeam[]>([]);
 
   // Restore compact preference from localStorage on mount
   useEffect(() => {
@@ -330,6 +350,12 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
       setTeamForm(data.teamForm ?? {});
       setRuleFavouriteTeamBonusWin(!!data.ruleFavouriteTeamBonusWin);
       setFavoriteTeamId(data.favoriteTeamId ?? null);
+      setRuleLMS(!!data.ruleLMS);
+      setLmsPreviousTeamIds(data.lmsPreviousTeamIds ?? []);
+      setLmsPreviousPicks(data.lmsPreviousPicks ?? []);
+      setLmsByeTeamIds(data.lmsByeTeamIds ?? []);
+      setAllTeams(data.allTeams ?? []);
+      setLmsTeamId(data.lmsPick?.teamId ?? null);
 
       if (data.pickSet?.picks) {
         const existing: Record<string, string> = {};
@@ -377,7 +403,7 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
     const res = await fetch("/api/picks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ picks }),
+      body: JSON.stringify({ picks, ...(ruleLMS && lmsTeamId ? { lmsTeamId } : {}) }),
     });
     if (!res.ok) {
       const data = await res.json();
@@ -742,6 +768,112 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
             );
           })}
         </div>
+
+        {/* Last Man Standing Selector */}
+        {ruleLMS && (
+          <div className="mt-6 rounded-lg border border-purple-700/40 bg-purple-900/10 p-5">
+            <h3 className="mb-1 text-sm font-semibold text-purple-300">⚔️ Last Man Standing Pick</h3>
+            <p className="mb-4 text-xs text-zinc-400">
+              {isLocked || isViewingOther || isHistorical
+                ? lmsTeamId
+                  ? `LMS Pick: ${allTeams.find((t) => t.id === lmsTeamId)?.name ?? lmsTeamId}`
+                  : "No LMS pick submitted for this week."
+                : "Pick one team to win this week. You cannot reuse a team from a previous week. Teams on a BYE are not available."}
+            </p>
+
+            {/* Previously used teams */}
+            {lmsPreviousPicks.length > 0 && (
+              <div className="mb-3 flex flex-wrap items-center gap-1.5">
+                {lmsPreviousPicks.map((p) => (
+                  <div
+                    key={p.teamId}
+                    className="flex flex-col items-center gap-0.5 opacity-30"
+                    title={`Wk ${p.week.number}: ${p.team.abbreviation}`}
+                  >
+                    <img
+                      src={`https://a.espncdn.com/i/teamlogos/nfl/500/${p.team.espnId}.png`}
+                      alt={p.team.abbreviation}
+                      className="h-7 w-7 object-contain grayscale"
+                    />
+                    <span className="text-[9px] text-zinc-600">{p.team.abbreviation}</span>
+                  </div>
+                ))}
+                <span className="ml-1 self-center text-[10px] text-zinc-600">already used</span>
+              </div>
+            )}
+
+            {/* Selector grid — all 32 teams */}
+            {allTeams.length > 0 && !isLocked && !isViewingOther && !isHistorical && (
+              <div className="flex flex-wrap gap-1.5">
+                {allTeams.map((team) => {
+                  const isUsed = lmsPreviousTeamIds.includes(team.id);
+                  const isBye = lmsByeTeamIds.includes(team.id);
+                  const isUnavailable = isUsed || isBye;
+                  const isSelected = lmsTeamId === team.id;
+                  return (
+                    <button
+                      key={team.id}
+                      type="button"
+                      disabled={isUnavailable}
+                      onClick={() => !isUnavailable && setLmsTeamId(isSelected ? null : team.id)}
+                      title={
+                        isUsed
+                          ? "Already used this season"
+                          : isBye
+                          ? `${team.name} is on BYE this week`
+                          : team.name
+                      }
+                      className={[
+                        "flex flex-col items-center gap-0.5 rounded-lg p-1.5 transition-all",
+                        isUnavailable ? "cursor-not-allowed opacity-20" : "",
+                        isSelected ? "scale-110 bg-purple-500/20 ring-2 ring-purple-500" : "",
+                        !isUnavailable && !isSelected
+                          ? "cursor-pointer hover:scale-105 hover:bg-zinc-700/60"
+                          : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
+                      <img
+                        src={`https://a.espncdn.com/i/teamlogos/nfl/500/${team.espnId}.png`}
+                        alt={team.abbreviation}
+                        className={`h-9 w-9 object-contain ${isUnavailable ? "grayscale" : ""}`}
+                      />
+                      <span
+                        className={`text-[10px] ${
+                          isSelected ? "font-medium text-purple-300" : "text-zinc-500"
+                        }`}
+                      >
+                        {team.abbreviation}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Read-only selected team display when locked/viewing */}
+            {(isLocked || isViewingOther || isHistorical) && lmsTeamId && allTeams.length > 0 && (() => {
+              const t = allTeams.find((t) => t.id === lmsTeamId);
+              return t ? (
+                <div className="flex items-center gap-2">
+                  <img
+                    src={`https://a.espncdn.com/i/teamlogos/nfl/500/${t.espnId}.png`}
+                    alt={t.abbreviation}
+                    className="h-10 w-10 object-contain"
+                  />
+                  <span className="text-sm font-medium text-purple-300">{t.name}</span>
+                </div>
+              ) : null;
+            })()}
+
+            {lmsTeamId && !isLocked && !isViewingOther && !isHistorical && (
+              <p className="mt-3 text-xs font-medium text-purple-300">
+                ✓ Selected: {allTeams.find((t) => t.id === lmsTeamId)?.name}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Submit */}
         {!isHistorical && !isViewingOther && !isLocked && !weekLockedNoSubmission && (

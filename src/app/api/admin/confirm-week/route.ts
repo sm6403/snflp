@@ -27,7 +27,7 @@ export async function POST(request: Request) {
       games: {
         select: { id: true, homeTeamId: true, awayTeamId: true, winnerId: true, isTie: true },
       },
-      season: { select: { id: true, ruleFavouriteTeamBonusWin: true } },
+      season: { select: { id: true, ruleFavouriteTeamBonusWin: true, ruleLMS: true } },
     },
   });
   if (!week) {
@@ -189,6 +189,28 @@ export async function POST(request: Request) {
         data: { isCorrect: true },
       });
       gradedCount += bonusPickIds.length;
+    }
+  }
+
+  // ── Phase 5: Last Man Standing elimination ──────────────────────────────────
+  // If LMS rule is enabled, mark any LmsPick for this week as eliminated if
+  // the player's chosen team lost (or tied — treated as a loss for LMS).
+  if (week.season.ruleLMS) {
+    const losingTeamIds = new Set<string>();
+    for (const game of week.games) {
+      if (game.winnerId) {
+        const loserId = game.homeTeamId === game.winnerId ? game.awayTeamId : game.homeTeamId;
+        losingTeamIds.add(loserId);
+      } else if (game.isTie) {
+        losingTeamIds.add(game.homeTeamId);
+        losingTeamIds.add(game.awayTeamId);
+      }
+    }
+    const weekLmsPicks = await prisma.lmsPick.findMany({ where: { weekId } });
+    for (const pick of weekLmsPicks) {
+      if (losingTeamIds.has(pick.teamId)) {
+        await prisma.lmsPick.update({ where: { id: pick.id }, data: { eliminated: true } });
+      }
     }
   }
 

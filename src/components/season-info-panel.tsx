@@ -22,6 +22,7 @@ interface Props {
   hasAnyStats: boolean;
   timedAutolocking: boolean;
   ruleFavouriteTeamBonusWin: boolean;
+  ruleLMS: boolean;
 }
 
 export function SeasonInfoPanel({
@@ -31,10 +32,11 @@ export function SeasonInfoPanel({
   hasAnyStats,
   timedAutolocking,
   ruleFavouriteTeamBonusWin,
+  ruleLMS,
 }: Props) {
   const [tab, setTab] = useState<"stats" | "rules">("stats");
 
-  const activeRuleCount = [timedAutolocking, ruleFavouriteTeamBonusWin].filter(Boolean).length;
+  const activeRuleCount = [timedAutolocking, ruleFavouriteTeamBonusWin, ruleLMS].filter(Boolean).length;
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
@@ -189,6 +191,22 @@ export function SeasonInfoPanel({
                       <p className="mt-1 text-xs text-zinc-400">
                         Individual games lock automatically at kickoff. You can still submit picks
                         for any game that hasn&apos;t started yet — locked games cannot be changed.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {ruleLMS && (
+                  <div className="flex items-start gap-3 rounded-lg border border-purple-700/40 bg-purple-500/5 px-4 py-3">
+                    <span className="mt-0.5 text-lg leading-none">⚔️</span>
+                    <div>
+                      <p className="text-sm font-semibold text-purple-300">
+                        Last Man Standing
+                      </p>
+                      <p className="mt-1 text-xs text-zinc-400">
+                        Each week you pick one team to win. If your team loses (or ties), you are
+                        eliminated. You cannot reuse a team across the season — teams on a BYE
+                        cannot be picked. Check the LMS tab on the leaderboard to see who&apos;s still standing.
                       </p>
                     </div>
                   </div>

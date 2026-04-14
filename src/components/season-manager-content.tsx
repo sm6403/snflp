@@ -31,6 +31,7 @@ interface SeasonSummary {
   isCurrent: boolean;
   timedAutolocking: boolean;
   ruleFavouriteTeamBonusWin: boolean;
+  ruleLMS: boolean;
   parentSeason: { id: string; year: number; type: string } | null;
   _count: { weeks: number };
   weeks: WeekSummary[];
@@ -961,6 +962,7 @@ function SeasonDetail({
 
 function CustomRulesTab({ season }: { season: SeasonSummary }) {
   const [bonusWin, setBonusWin] = useState(season.ruleFavouriteTeamBonusWin);
+  const [lms, setLms] = useState(season.ruleLMS);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -976,6 +978,29 @@ function CustomRulesTab({ season }: { season: SeasonSummary }) {
       });
       if (res.ok) {
         setBonusWin(next);
+      } else {
+        const d = await res.json();
+        setError(d.error ?? "Failed to save");
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleLms() {
+    const next = !lms;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/seasons/${season.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ruleLMS: next }),
+      });
+      if (res.ok) {
+        setLms(next);
       } else {
         const d = await res.json();
         setError(d.error ?? "Failed to save");
@@ -1029,6 +1054,45 @@ function CustomRulesTab({ season }: { season: SeasonSummary }) {
             <span
               className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
                 bonusWin ? "translate-x-8" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* Rule: Last Man Standing */}
+      <div className="rounded-lg border border-zinc-800 bg-zinc-800/50 p-6">
+        <div className="flex items-start justify-between gap-6">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="font-medium text-zinc-100">⚔️ Last Man Standing</h3>
+              {lms && (
+                <span className="inline-flex rounded-full bg-purple-600/20 px-2 py-0.5 text-xs font-semibold text-purple-400">
+                  Active
+                </span>
+              )}
+            </div>
+            <p className="mt-2 text-sm text-zinc-400">
+              Each week players pick <strong className="text-zinc-300">one team</strong> to win. If
+              that team loses (or ties), they are eliminated from Last Man Standing — but can still
+              submit regular picks. Teams cannot be reused across the season.
+            </p>
+            <p className="mt-1.5 text-xs text-zinc-600">
+              Teams on a BYE week are not selectable. Elimination is applied automatically when the
+              week is confirmed. A dedicated leaderboard tracks who is still standing.
+            </p>
+          </div>
+          <button
+            onClick={toggleLms}
+            disabled={saving}
+            aria-label={`${lms ? "Disable" : "Enable"} Last Man Standing`}
+            className={`relative inline-flex h-7 w-14 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+              lms ? "bg-purple-600" : "bg-zinc-600"
+            }`}
+          >
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                lms ? "translate-x-8" : "translate-x-1"
               }`}
             />
           </button>
