@@ -11,11 +11,17 @@ export async function PATCH(request: Request) {
 
   const body = await request.json();
 
-  // Toggle the user's own lock state
+  // Users can only lock their own pick — unlocking is admin-only
   if (typeof body.locked === "boolean") {
+    if (body.locked === false) {
+      return NextResponse.json(
+        { error: "Only an admin can unlock your favourite team pick." },
+        { status: 403 }
+      );
+    }
     const user = await prisma.user.update({
       where: { id: session.user.id },
-      data: { favoriteTeamLocked: body.locked },
+      data: { favoriteTeamLocked: true },
       select: { favoriteTeam: true, favoriteTeamLocked: true },
     });
     return NextResponse.json(user);

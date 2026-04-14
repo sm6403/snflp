@@ -112,26 +112,29 @@ export function FavoriteTeamPicker({
             <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{team}</p>
           </div>
           <div className="flex gap-2">
-            {!locked && (
-              <button
-                onClick={() => setEditing(true)}
-                className="rounded-lg border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              >
-                Edit
-              </button>
+            {locked ? (
+              // Locked — only admin can unlock; show a quiet info label
+              <span className="text-xs text-zinc-500 self-center">
+                Contact your admin to change
+              </span>
+            ) : (
+              <>
+                <button
+                  onClick={() => setEditing(true)}
+                  className="rounded-lg border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={handleToggleLock}
+                  disabled={loading}
+                  title="Lock in your favourite team — only an admin can unlock it"
+                  className="rounded-lg border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  {loading ? "..." : "🔒 Lock"}
+                </button>
+              </>
             )}
-            <button
-              onClick={handleToggleLock}
-              disabled={loading}
-              title={locked ? "Unlock your favourite team so you can change it" : "Lock in your favourite team pick"}
-              className={`rounded-lg border px-4 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 ${
-                locked
-                  ? "border-amber-600/50 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
-                  : "border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              }`}
-            >
-              {loading ? "..." : locked ? "🔒 Unlock" : "🔒 Lock"}
-            </button>
           </div>
         </div>
       )}
