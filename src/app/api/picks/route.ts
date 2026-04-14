@@ -53,12 +53,13 @@ export async function GET(request: Request) {
 
   const games = await getGamesForWeek(week.id);
 
-  // Determine if timed autolocking is enabled for this season
+  // Determine season-level flags
   const season = await prisma.season.findUnique({
     where: { id: week.seasonId },
-    select: { timedAutolocking: true },
+    select: { timedAutolocking: true, ruleFavouriteTeamBonusWin: true },
   });
   const timedAutolocking = season?.timedAutolocking ?? false;
+  const ruleFavouriteTeamBonusWin = season?.ruleFavouriteTeamBonusWin ?? false;
 
   // Compute per-game isTimeLocked: locked when gameTime ≤ 1 min from now
   const now = new Date();
@@ -169,6 +170,7 @@ export async function GET(request: Request) {
     isViewingOther,
     viewingUser,
     timedAutolocking,
+    ruleFavouriteTeamBonusWin,
     teamForm,
   });
 }

@@ -30,6 +30,7 @@ interface SeasonSummary {
   mode: "live" | "test";
   isCurrent: boolean;
   timedAutolocking: boolean;
+  ruleFavouriteTeamBonusWin: boolean;
   parentSeason: { id: string; year: number; type: string } | null;
   _count: { weeks: number };
   weeks: WeekSummary[];
@@ -959,11 +960,79 @@ function SeasonDetail({
 // ─── Custom Rules Tab ─────────────────────────────────────────────────────────
 
 function CustomRulesTab({ season }: { season: SeasonSummary }) {
+  const [bonusWin, setBonusWin] = useState(season.ruleFavouriteTeamBonusWin);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function toggleBonusWin() {
+    const next = !bonusWin;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/seasons/${season.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ruleFavouriteTeamBonusWin: next }),
+      });
+      if (res.ok) {
+        setBonusWin(next);
+      } else {
+        const d = await res.json();
+        setError(d.error ?? "Failed to save");
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-6 py-8 text-center">
-        <p className="text-sm font-medium text-zinc-400">No custom rules configured for {seasonLabel(season)}.</p>
-        <p className="mt-1 text-xs text-zinc-600">Custom rules will appear here.</p>
+      {error && (
+        <div className="rounded-lg border border-red-700 bg-red-900/20 px-4 py-3">
+          <p className="text-sm text-red-400">{error}</p>
+        </div>
+      )}
+
+      {/* Rule: Favourite Team Bonus Win */}
+      <div className="rounded-lg border border-zinc-800 bg-zinc-800/50 p-6">
+        <div className="flex items-start justify-between gap-6">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="font-medium text-zinc-100">Favourite Team Pick always gives a Win</h3>
+              {bonusWin && (
+                <span className="inline-flex rounded-full bg-purple-600/20 px-2 py-0.5 text-xs font-semibold text-purple-400">
+                  Active
+                </span>
+              )}
+            </div>
+            <p className="mt-2 text-sm text-zinc-400">
+              When enabled, a player&apos;s pick for their favourite team always counts as correct —
+              even if that team lost. In the results screen the pick is highlighted in{" "}
+              <span className="text-purple-400">purple</span> with a{" "}
+              <span className="text-purple-400">TEAM PICK</span> label.
+            </p>
+            <p className="mt-1.5 text-xs text-zinc-600">
+              Example: your favourite team is the Rams. Rams lose to 49ers, but you picked Rams —
+              you still get the point. The bonus is applied when the week is confirmed.
+            </p>
+          </div>
+          <button
+            onClick={toggleBonusWin}
+            disabled={saving}
+            aria-label={`${bonusWin ? "Disable" : "Enable"} Favourite Team Bonus Win`}
+            className={`relative inline-flex h-7 w-14 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+              bonusWin ? "bg-purple-600" : "bg-zinc-600"
+            }`}
+          >
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                bonusWin ? "translate-x-8" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
       </div>
     </div>
   );

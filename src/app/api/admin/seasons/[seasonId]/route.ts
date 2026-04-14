@@ -17,6 +17,7 @@ export async function PATCH(request: Request, { params }: Params) {
     mode?: "live" | "test";
     addWeek?: boolean; // adds one new week at the end (for postseason)
     timedAutolocking?: boolean;
+    ruleFavouriteTeamBonusWin?: boolean;
   };
 
   const season = await prisma.season.findUnique({ where: { id: seasonId } });
@@ -43,6 +44,7 @@ export async function PATCH(request: Request, { params }: Params) {
         ...(body.isCurrent !== undefined && { isCurrent: body.isCurrent }),
         ...(body.mode && { mode: body.mode }),
         ...(body.timedAutolocking !== undefined && { timedAutolocking: body.timedAutolocking }),
+        ...(body.ruleFavouriteTeamBonusWin !== undefined && { ruleFavouriteTeamBonusWin: body.ruleFavouriteTeamBonusWin }),
       },
       include: {
         parentSeason: { select: { id: true, year: true, type: true } },

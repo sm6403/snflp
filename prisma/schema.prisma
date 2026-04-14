@@ -28,7 +28,8 @@ model Season {
   type             String   @default("regular")    // "regular" | "postseason"
   mode             String   @default("live")        // "live" | "test"
   isCurrent        Boolean  @default(false)
-  timedAutolocking Boolean  @default(false)
+  timedAutolocking           Boolean  @default(false)
+  ruleFavouriteTeamBonusWin  Boolean  @default(false)
   parentSeasonId   String?
   parentSeason     Season?  @relation("PostSeason", fields: [parentSeasonId], references: [id])
   childSeasons     Season[] @relation("PostSeason")

@@ -22,6 +22,7 @@ export async function POST(request: Request) {
       games: {
         select: { id: true, homeTeamId: true, awayTeamId: true, winnerId: true, isTie: true },
       },
+      season: { select: { ruleFavouriteTeamBonusWin: true } },
     },
   });
   if (!week) {
@@ -136,6 +137,51 @@ export async function POST(request: Request) {
         create: { teamId, weekId, ...record },
         update: record,
       });
+    }
+
+    // ── Custom rule: Favourite Team Bonus Win ────────────────────────────────
+    // Any pick for a player's favourite team counts as correct even if that
+    // team lost. Applied after normal grading so it overrides incorrect picks.
+    if (week.season.ruleFavouriteTeamBonusWin) {
+      // Fetch all pick sets for this week including the user's favourite team name
+      const pickSetsWithUsers = await tx.pickSet.findMany({
+        where: { weekId },
+        select: {
+          user: { select: { favoriteTeam: true } },
+          picks: {
+            where: { isCorrect: false },
+            select: { id: true, pickedTeamId: true },
+          },
+        },
+      });
+
+      // Resolve unique favourite team names → IDs in one query
+      const favTeamNames = [...new Set(pickSetsWithUsers.map((ps) => ps.user.favoriteTeam))];
+      const favTeams = await tx.team.findMany({
+        where: { name: { in: favTeamNames } },
+        select: { id: true, name: true },
+      });
+      const nameToId = new Map(favTeams.map((t) => [t.name, t.id]));
+
+      // Collect IDs of incorrect picks that should be overridden to correct
+      const bonusPickIds: string[] = [];
+      for (const ps of pickSetsWithUsers) {
+        const favTeamId = nameToId.get(ps.user.favoriteTeam);
+        if (!favTeamId) continue;
+        for (const pick of ps.picks) {
+          if (pick.pickedTeamId === favTeamId) {
+            bonusPickIds.push(pick.id);
+          }
+        }
+      }
+
+      if (bonusPickIds.length > 0) {
+        await tx.pick.updateMany({
+          where: { id: { in: bonusPickIds } },
+          data: { isCorrect: true },
+        });
+        gradedCount += bonusPickIds.length;
+      }
     }
   });
 

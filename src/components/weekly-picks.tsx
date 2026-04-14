@@ -133,6 +133,7 @@ function TeamButton({
   isCorrectPick,
   isFavoritePreselect,
   isResultsView,
+  isFavouriteTeamBonus = false,
   recentForm,
   formPosition,
   compact = false,
@@ -146,6 +147,7 @@ function TeamButton({
   isCorrectPick: boolean | null;
   isFavoritePreselect: boolean;
   isResultsView: boolean;
+  isFavouriteTeamBonus?: boolean;
   recentForm?: FormEntry[];
   formPosition?: "left" | "right";
   compact?: boolean;
@@ -160,6 +162,9 @@ function TeamButton({
     borderBg = "border-amber-500 bg-amber-500/10";
   } else if (isWinner === true) {
     borderBg = "border-green-500 bg-green-500/10";
+  } else if (isFavouriteTeamBonus && selected) {
+    // Favourite team bonus win overrides the normal "wrong pick" red styling
+    borderBg = "border-purple-500 bg-purple-500/10";
   } else if (isWinner === false && selected) {
     borderBg = "border-red-500 bg-red-500/10";
   } else if (isWinner === false) {
@@ -188,6 +193,8 @@ function TeamButton({
       resultDot = <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-amber-400" title="Draw" />;
     } else if (!isTie && isWinner === true) {
       resultDot = <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-green-400" title="Winner" />;
+    } else if (!isTie && isFavouriteTeamBonus && selected) {
+      resultDot = <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-purple-400" title="Bonus Win" />;
     } else if (!isTie && isCorrectPick === true && selected) {
       resultDot = <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-green-400" title="Correct" />;
     } else if (!isTie && isCorrectPick === false && selected) {
@@ -235,10 +242,13 @@ function TeamButton({
       {!isTie && isWinner === true && (
         <span className="text-xs font-semibold text-green-400">✓ Winner</span>
       )}
-      {!isTie && isCorrectPick === true && selected && (
+      {!isTie && isFavouriteTeamBonus && selected && (
+        <span className="text-xs font-semibold text-purple-400">⭐ Bonus Win</span>
+      )}
+      {!isTie && !isFavouriteTeamBonus && isCorrectPick === true && selected && (
         <span className="text-xs font-semibold text-green-400">✓ Correct</span>
       )}
-      {!isTie && isCorrectPick === false && selected && (
+      {!isTie && !isFavouriteTeamBonus && isCorrectPick === false && selected && (
         <span className="text-xs font-semibold text-red-400">✗ Wrong</span>
       )}
       {selected && isFavoritePreselect && !locked && !isResultsView && (
@@ -275,6 +285,8 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
   const [viewingUser, setViewingUser] = useState<{ alias: string | null; name: string | null } | null>(null);
   const [timedAutolocking, setTimedAutolocking] = useState(false);
   const [teamForm, setTeamForm] = useState<Record<string, FormEntry[]>>({});
+  const [ruleFavouriteTeamBonusWin, setRuleFavouriteTeamBonusWin] = useState(false);
+  const [favoriteTeamId, setFavoriteTeamId] = useState<string | null>(null);
   const [compact, setCompact] = useState(false);
 
   // Restore compact preference from localStorage on mount
@@ -316,6 +328,8 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
       setViewingUser(data.viewingUser ?? null);
       setTimedAutolocking(!!data.timedAutolocking);
       setTeamForm(data.teamForm ?? {});
+      setRuleFavouriteTeamBonusWin(!!data.ruleFavouriteTeamBonusWin);
+      setFavoriteTeamId(data.favoriteTeamId ?? null);
 
       if (data.pickSet?.picks) {
         const existing: Record<string, string> = {};
@@ -575,6 +589,17 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
             const withPickResultsView = isHistorical && !userPick && hasResult;
             const gameTimeLocked = !!game.isTimeLocked;
 
+            // Favourite team bonus win: rule enabled, week confirmed, user picked fav team,
+            // fav team played this game, fav team lost (winner is someone else)
+            const isFavBonusGame =
+              ruleFavouriteTeamBonusWin &&
+              !!favoriteTeamId &&
+              hasResult &&
+              !game.isTie &&
+              selectedTeamId === favoriteTeamId &&
+              (game.awayTeam.id === favoriteTeamId || game.homeTeam.id === favoriteTeamId) &&
+              game.winner?.id !== favoriteTeamId;
+
             const gameTimeStr = game.gameTime
               ? new Date(game.gameTime).toLocaleString(undefined, {
                   weekday: "short",
@@ -591,9 +616,20 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
                 <div
                   key={game.id}
                   className={`rounded-lg border px-3 py-1.5 ${
-                    gameTimeLocked ? "border-amber-800/50 bg-zinc-900" : "border-zinc-800 bg-zinc-900"
+                    isFavBonusGame
+                      ? "border-purple-700/60 bg-zinc-900"
+                      : gameTimeLocked
+                      ? "border-amber-800/50 bg-zinc-900"
+                      : "border-zinc-800 bg-zinc-900"
                   }`}
                 >
+                  {isFavBonusGame && (
+                    <div className="mb-1 flex justify-end">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-purple-600/20 px-2 py-0.5 text-[9px] font-semibold text-purple-400">
+                        ⭐ TEAM PICK
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2">
                     <TeamButton
                       team={game.awayTeam}
@@ -604,6 +640,7 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
                       isCorrectPick={userPick?.isCorrect ?? null}
                       isFavoritePreselect={isFavGame && selectedTeamId === game.awayTeam.id}
                       isResultsView={noPickResultsView || withPickResultsView}
+                      isFavouriteTeamBonus={isFavBonusGame && game.awayTeam.id === favoriteTeamId}
                       recentForm={teamForm[game.awayTeam.id]}
                       formPosition="right"
                       compact
@@ -629,6 +666,7 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
                       isCorrectPick={userPick?.isCorrect ?? null}
                       isFavoritePreselect={isFavGame && selectedTeamId === game.homeTeam.id}
                       isResultsView={noPickResultsView || withPickResultsView}
+                      isFavouriteTeamBonus={isFavBonusGame && game.homeTeam.id === favoriteTeamId}
                       recentForm={teamForm[game.homeTeam.id]}
                       formPosition="left"
                       compact
@@ -641,17 +679,33 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
 
             // ── Full card ──────────────────────────────────────────────────
             return (
-              <div key={game.id} className={`rounded-xl border p-4 ${gameTimeLocked ? "border-amber-800/50 bg-zinc-900" : "border-zinc-800 bg-zinc-900"}`}>
+              <div
+                key={game.id}
+                className={`rounded-xl border p-4 ${
+                  isFavBonusGame
+                    ? "border-purple-700/60 bg-zinc-900"
+                    : gameTimeLocked
+                    ? "border-amber-800/50 bg-zinc-900"
+                    : "border-zinc-800 bg-zinc-900"
+                }`}
+              >
                 <div className="mb-3 flex items-center justify-between gap-2">
                   {gameTimeStr ? (
                     <p className="text-xs text-zinc-500">{gameTimeStr}</p>
                   ) : <span />}
-                  {gameTimeLocked && !isHistorical && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-600/20 px-2 py-0.5 text-xs font-semibold text-amber-400">
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                      ⏰ Started
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {isFavBonusGame && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-purple-600/20 px-2 py-0.5 text-xs font-semibold text-purple-400">
+                        ⭐ TEAM PICK
+                      </span>
+                    )}
+                    {gameTimeLocked && !isHistorical && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-600/20 px-2 py-0.5 text-xs font-semibold text-amber-400">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                        ⏰ Started
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex gap-3">
                   <TeamButton
@@ -663,6 +717,7 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
                     isCorrectPick={userPick?.isCorrect ?? null}
                     isFavoritePreselect={isFavGame && selectedTeamId === game.awayTeam.id}
                     isResultsView={noPickResultsView || withPickResultsView}
+                    isFavouriteTeamBonus={isFavBonusGame && game.awayTeam.id === favoriteTeamId}
                     recentForm={teamForm[game.awayTeam.id]}
                     formPosition="right"
                     onClick={() => handleTeamClick(game.id, game.awayTeam.id)}
@@ -677,6 +732,7 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
                     isCorrectPick={userPick?.isCorrect ?? null}
                     isFavoritePreselect={isFavGame && selectedTeamId === game.homeTeam.id}
                     isResultsView={noPickResultsView || withPickResultsView}
+                    isFavouriteTeamBonus={isFavBonusGame && game.homeTeam.id === favoriteTeamId}
                     recentForm={teamForm[game.homeTeam.id]}
                     formPosition="left"
                     onClick={() => handleTeamClick(game.id, game.homeTeam.id)}

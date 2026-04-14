@@ -14,7 +14,7 @@ export async function GET() {
       orderBy: [{ year: "desc" }, { type: "asc" }],
       select: {
         id: true, year: true, type: true, mode: true,
-        isCurrent: true, timedAutolocking: true, createdAt: true,
+        isCurrent: true, timedAutolocking: true, ruleFavouriteTeamBonusWin: true, createdAt: true,
         parentSeasonId: true,
         parentSeason: { select: { id: true, year: true, type: true } },
         _count: { select: { weeks: true } },
