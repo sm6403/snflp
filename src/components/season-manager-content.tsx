@@ -392,21 +392,24 @@ function SeasonList({
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
+                      {/* Fixed-width slot so Manage is always in the same column */}
+                      <div className="w-[72px] flex justify-center">
+                        {!s.isCurrent && (
+                          <button
+                            onClick={() => handleSetActive(s.id)}
+                            disabled={actionLoading === s.id + "-active"}
+                            className="rounded-md px-3 py-1 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200 disabled:opacity-40"
+                          >
+                            Set Active
+                          </button>
+                        )}
+                      </div>
                       <button
                         onClick={() => onNavigate({ type: "season", seasonId: s.id })}
                         className="rounded-md px-3 py-1 text-xs font-medium text-indigo-400 transition-colors hover:bg-indigo-900/30 hover:text-indigo-300"
                       >
                         Manage
                       </button>
-                      {!s.isCurrent && (
-                        <button
-                          onClick={() => handleSetActive(s.id)}
-                          disabled={actionLoading === s.id + "-active"}
-                          className="rounded-md px-3 py-1 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200 disabled:opacity-40"
-                        >
-                          Set Active
-                        </button>
-                      )}
                       <button
                         onClick={() => handleToggleMode(s.id, s.mode)}
                         disabled={actionLoading === s.id + "-mode"}
