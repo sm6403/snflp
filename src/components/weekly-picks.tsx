@@ -62,14 +62,28 @@ function recordLabel(records: TeamRecord[]): string {
   return `${r.wins}-${r.losses}-${r.ties}`;
 }
 
-function FormStrip({ form, position }: { form: FormEntry[]; position: "left" | "right" }) {
+// ─── Form Strip ───────────────────────────────────────────────────────────────
+
+function FormStrip({
+  form,
+  position,
+  compact = false,
+}: {
+  form: FormEntry[];
+  position: "left" | "right";
+  compact?: boolean;
+}) {
   if (!form || form.length === 0) return null;
+
+  const size = compact ? "h-5 w-5" : "h-7 w-7";
+  const gap = compact ? "gap-1" : "gap-1.5";
+  const direction = compact ? "flex-row" : "flex-col";
+  const margin = compact
+    ? position === "left" ? "mr-1.5" : "ml-1.5"
+    : position === "left" ? "mr-1" : "ml-1";
+
   return (
-    <div
-      className={`flex flex-col items-center gap-1.5 self-center flex-shrink-0 ${
-        position === "left" ? "mr-1" : "ml-1"
-      }`}
-    >
+    <div className={`flex ${direction} items-center ${gap} self-center flex-shrink-0 ${margin}`}>
       {form.map((entry, i) => {
         const weekLabel = `Week ${entry.weekNumber}`;
         if (entry.result === "bye") {
@@ -77,9 +91,9 @@ function FormStrip({ form, position }: { form: FormEntry[]; position: "left" | "
             <div
               key={i}
               title={weekLabel}
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-700"
+              className={`flex ${size} items-center justify-center rounded-full bg-zinc-700 flex-shrink-0`}
             >
-              <span className="text-[7px] font-bold leading-none text-zinc-400">BYE</span>
+              <span className="text-[6px] font-bold leading-none text-zinc-400">BYE</span>
             </div>
           );
         }
@@ -94,7 +108,7 @@ function FormStrip({ form, position }: { form: FormEntry[]; position: "left" | "
           <div
             key={i}
             title={weekLabel}
-            className={`h-7 w-7 flex-shrink-0 overflow-hidden rounded-full border-2 bg-zinc-800 ${borderColor}`}
+            className={`${size} flex-shrink-0 overflow-hidden rounded-full border-2 bg-zinc-800 ${borderColor}`}
           >
             <img
               src={oppLogoUrl}
@@ -108,6 +122,8 @@ function FormStrip({ form, position }: { form: FormEntry[]; position: "left" | "
   );
 }
 
+// ─── Team Button ──────────────────────────────────────────────────────────────
+
 function TeamButton({
   team,
   selected,
@@ -119,6 +135,7 @@ function TeamButton({
   isResultsView,
   recentForm,
   formPosition,
+  compact = false,
   onClick,
 }: {
   team: Team;
@@ -128,39 +145,85 @@ function TeamButton({
   isTie: boolean;
   isCorrectPick: boolean | null;
   isFavoritePreselect: boolean;
-  /** In results view with no user pick, just show winner/loser without pick overlay */
   isResultsView: boolean;
   recentForm?: FormEntry[];
   formPosition?: "left" | "right";
+  compact?: boolean;
   onClick: () => void;
 }) {
   const logoUrl = `https://a.espncdn.com/i/teamlogos/nfl/500/${team.espnId}.png`;
-  const base = "flex flex-1 items-center rounded-xl border-2 p-4 transition-all";
   const hasResult = isWinner !== null;
 
-  let style: string;
-
+  // Border/bg style — same logic for both layouts
+  let borderBg: string;
   if (hasResult && isTie) {
-    style = `${base} border-amber-500 bg-amber-500/10`;
+    borderBg = "border-amber-500 bg-amber-500/10";
   } else if (isWinner === true) {
-    style = `${base} border-green-500 bg-green-500/10`;
+    borderBg = "border-green-500 bg-green-500/10";
   } else if (isWinner === false && selected) {
-    style = `${base} border-red-500 bg-red-500/10`;
+    borderBg = "border-red-500 bg-red-500/10";
   } else if (isWinner === false) {
-    style = `${base} border-zinc-700 bg-zinc-800/40 opacity-40`;
+    borderBg = "border-zinc-700 bg-zinc-800/40 opacity-40";
   } else if (isResultsView) {
-    style = `${base} border-zinc-700 bg-zinc-800/60 opacity-60`;
+    borderBg = "border-zinc-700 bg-zinc-800/60 opacity-60";
   } else if (locked) {
-    style = selected
-      ? `${base} border-green-500 bg-green-500/10`
-      : `${base} border-zinc-700 bg-zinc-800/40 opacity-40`;
+    borderBg = selected
+      ? "border-green-500 bg-green-500/10"
+      : "border-zinc-700 bg-zinc-800/40 opacity-40";
   } else if (selected && isFavoritePreselect) {
-    style = `${base} border-yellow-400 bg-yellow-400/10 cursor-pointer`;
+    borderBg = "border-yellow-400 bg-yellow-400/10 cursor-pointer";
   } else {
-    style = selected
-      ? `${base} border-indigo-500 bg-indigo-500/10 cursor-pointer`
-      : `${base} border-zinc-700 bg-zinc-800 hover:border-zinc-500 cursor-pointer`;
+    borderBg = selected
+      ? "border-indigo-500 bg-indigo-500/10 cursor-pointer"
+      : "border-zinc-700 bg-zinc-800 hover:border-zinc-500 cursor-pointer";
   }
+
+  // ── Compact layout ──────────────────────────────────────────────────────────
+  if (compact) {
+    const base = `flex flex-1 items-center gap-2 rounded-lg border-2 px-2.5 py-1.5 transition-all ${borderBg}`;
+
+    // Small result dot shown after abbreviation
+    let resultDot: React.ReactNode = null;
+    if (hasResult && isTie) {
+      resultDot = <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-amber-400" title="Draw" />;
+    } else if (!isTie && isWinner === true) {
+      resultDot = <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-green-400" title="Winner" />;
+    } else if (!isTie && isCorrectPick === true && selected) {
+      resultDot = <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-green-400" title="Correct" />;
+    } else if (!isTie && isCorrectPick === false && selected) {
+      resultDot = <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-red-400" title="Wrong" />;
+    } else if (selected && isFavoritePreselect && !locked && !isResultsView) {
+      resultDot = <span className="text-[10px] leading-none" title="Favourite">⭐</span>;
+    }
+
+    const inner = (
+      <>
+        <img src={logoUrl} alt={team.name} className="h-7 w-7 flex-shrink-0 object-contain" />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex items-center gap-1">
+            <span className="text-xs font-semibold text-zinc-100">{team.abbreviation}</span>
+            {resultDot}
+          </div>
+          <span className="text-[10px] leading-tight text-zinc-500">{recordLabel(team.teamRecords)}</span>
+        </div>
+      </>
+    );
+
+    return (
+      <button className={base} onClick={onClick} disabled={locked || isResultsView} type="button">
+        {formPosition === "left" && recentForm && recentForm.length > 0 && (
+          <FormStrip form={recentForm} position="left" compact />
+        )}
+        {inner}
+        {formPosition === "right" && recentForm && recentForm.length > 0 && (
+          <FormStrip form={recentForm} position="right" compact />
+        )}
+      </button>
+    );
+  }
+
+  // ── Full layout ─────────────────────────────────────────────────────────────
+  const base = `flex flex-1 items-center rounded-xl border-2 p-4 transition-all ${borderBg}`;
 
   const mainContent = (
     <div className="flex flex-1 flex-col items-center gap-2">
@@ -168,12 +231,9 @@ function TeamButton({
       <span className="text-sm font-semibold text-zinc-100">{team.abbreviation}</span>
       <span className="text-xs text-zinc-400">{recordLabel(team.teamRecords)}</span>
 
-      {/* Draw result */}
       {hasResult && isTie && (
         <span className="text-xs font-semibold text-amber-400">Draw</span>
       )}
-
-      {/* Normal win/loss result labels */}
       {!isTie && isWinner === true && (
         <span className="text-xs font-semibold text-green-400">✓ Winner</span>
       )}
@@ -183,8 +243,6 @@ function TeamButton({
       {!isTie && isCorrectPick === false && selected && (
         <span className="text-xs font-semibold text-red-400">✗ Wrong</span>
       )}
-
-      {/* Favourite pre-selection indicator (picking phase only) */}
       {selected && isFavoritePreselect && !locked && !isResultsView && (
         <span className="text-xs font-semibold text-yellow-400">⭐ Favourite</span>
       )}
@@ -192,7 +250,7 @@ function TeamButton({
   );
 
   return (
-    <button className={style} onClick={onClick} disabled={locked || isResultsView} type="button">
+    <button className={base} onClick={onClick} disabled={locked || isResultsView} type="button">
       {formPosition === "left" && recentForm && recentForm.length > 0 && (
         <FormStrip form={recentForm} position="left" />
       )}
@@ -203,6 +261,8 @@ function TeamButton({
     </button>
   );
 }
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: string }) {
   const [week, setWeek] = useState<Week | null>(null);
@@ -217,6 +277,22 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
   const [viewingUser, setViewingUser] = useState<{ alias: string | null; name: string | null } | null>(null);
   const [timedAutolocking, setTimedAutolocking] = useState(false);
   const [teamForm, setTeamForm] = useState<Record<string, FormEntry[]>>({});
+  const [compact, setCompact] = useState(false);
+
+  // Restore compact preference from localStorage on mount
+  useEffect(() => {
+    try {
+      setCompact(localStorage.getItem("picks-compact") === "true");
+    } catch {}
+  }, []);
+
+  function toggleCompact() {
+    setCompact((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("picks-compact", String(next)); } catch {}
+      return next;
+    });
+  }
 
   // Historical mode = viewing a specific past week via /picks/[weekId]
   const isHistorical = !!weekId;
@@ -251,7 +327,6 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
         setSelections(existing);
         setFavoriteSelections(new Set());
       } else if (!isHistorical && !data.isViewingOther && data.favoriteTeamId && data.games?.length) {
-        // Only auto-select favourite on the current week, not historical results pages or other user views
         const favId: string = data.favoriteTeamId;
         const autoSelections: Record<string, string> = {};
         const favGames = new Set<string>();
@@ -316,13 +391,11 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
   const allPicked = pickableGames.length > 0 && pickableGames.every((g) => !!selections[g.id]);
   const weekLockedNoSubmission = week?.lockedForSubmission && !pickSet;
 
-  // Results data
   const gradedPicks = pickSet?.picks.filter((p) => p.isCorrect !== null) ?? [];
   const correctCount = gradedPicks.filter((p) => p.isCorrect === true).length;
   const hasResults = gradedPicks.length > 0;
   const scorePct = gradedPicks.length > 0 ? Math.round((correctCount / gradedPicks.length) * 100) : 0;
 
-  // Historical mode — check if ANY game has a confirmed winner
   const anyGameHasResult = games.some((g) => g.winner !== null);
   const noResultsYet = isHistorical && !anyGameHasResult;
 
@@ -374,9 +447,41 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
               {week.season.year} · {week.label}
             </p>
           </div>
-          <Link href="/dashboard" className="text-sm text-zinc-400 hover:text-zinc-200">
-            Dashboard
-          </Link>
+          <div className="flex items-center gap-3">
+            {/* Compact toggle */}
+            <button
+              onClick={toggleCompact}
+              title={compact ? "Switch to full view" : "Switch to compact view"}
+              className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                compact
+                  ? "border-indigo-500 bg-indigo-500/10 text-indigo-400"
+                  : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
+              }`}
+            >
+              {/* Two-lines icon for compact, full-card icon for expanded */}
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth={2}>
+                {compact ? (
+                  // Wider spaced lines = expanded view
+                  <>
+                    <rect x="1" y="2" width="14" height="4" rx="1" />
+                    <rect x="1" y="10" width="14" height="4" rx="1" />
+                  </>
+                ) : (
+                  // Tight lines = compact view
+                  <>
+                    <line x1="1" y1="3" x2="15" y2="3" />
+                    <line x1="1" y1="7" x2="15" y2="7" />
+                    <line x1="1" y1="11" x2="15" y2="11" />
+                    <line x1="1" y1="15" x2="15" y2="15" />
+                  </>
+                )}
+              </svg>
+              {compact ? "Full" : "Compact"}
+            </button>
+            <Link href="/dashboard" className="text-sm text-zinc-400 hover:text-zinc-200">
+              Dashboard
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -395,7 +500,7 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
           </div>
         )}
 
-        {/* Score summary (historical or current — whenever there are graded picks) */}
+        {/* Score summary */}
         {hasResults && (
           <div className={`mb-6 rounded-lg border p-4 ${
             correctCount === gradedPicks.length
@@ -462,34 +567,86 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
         )}
 
         {/* ── GAME CARDS ── */}
-        <div className="space-y-4">
+        <div className={compact ? "space-y-1.5" : "space-y-4"}>
           {games.map((game) => {
             const selectedTeamId = selections[game.id];
             const userPick = pickSet?.picks.find((p) => p.gameId === game.id);
             const hasResult = game.winner !== null || !!game.isTie;
             const isFavGame = favoriteSelections.has(game.id);
-
-            // In historical mode with no user pick, show game results without pick overlay
-            // When there's no result entered for this specific game in historical mode,
-            // use isResultsView=true to render a neutral "pending" style
             const noPickResultsView = isHistorical && !userPick && !hasResult;
             const withPickResultsView = isHistorical && !userPick && hasResult;
-
             const gameTimeLocked = !!game.isTimeLocked;
 
+            const gameTimeStr = game.gameTime
+              ? new Date(game.gameTime).toLocaleString(undefined, {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })
+              : null;
+
+            if (compact) {
+              // ── Compact row ──────────────────────────────────────────────
+              return (
+                <div
+                  key={game.id}
+                  className={`rounded-lg border px-3 py-1.5 ${
+                    gameTimeLocked ? "border-amber-800/50 bg-zinc-900" : "border-zinc-800 bg-zinc-900"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <TeamButton
+                      team={game.awayTeam}
+                      selected={selectedTeamId === game.awayTeam.id}
+                      locked={isLocked || weekLockedNoSubmission || gameTimeLocked || false}
+                      isWinner={hasResult ? (game.winner?.id === game.awayTeam.id || false) : null}
+                      isTie={hasResult && !!game.isTie}
+                      isCorrectPick={userPick?.isCorrect ?? null}
+                      isFavoritePreselect={isFavGame && selectedTeamId === game.awayTeam.id}
+                      isResultsView={noPickResultsView || withPickResultsView}
+                      recentForm={teamForm[game.awayTeam.id]}
+                      formPosition="right"
+                      compact
+                      onClick={() => handleTeamClick(game.id, game.awayTeam.id)}
+                    />
+
+                    <div className="flex flex-shrink-0 flex-col items-center gap-0.5">
+                      <span className="text-xs font-bold text-zinc-500">@</span>
+                      {gameTimeLocked && !isHistorical && (
+                        <span className="text-[9px] font-semibold text-amber-500">⏰</span>
+                      )}
+                      {gameTimeStr && (
+                        <span className="hidden text-[9px] text-zinc-600 sm:block">{gameTimeStr}</span>
+                      )}
+                    </div>
+
+                    <TeamButton
+                      team={game.homeTeam}
+                      selected={selectedTeamId === game.homeTeam.id}
+                      locked={isLocked || weekLockedNoSubmission || gameTimeLocked || false}
+                      isWinner={hasResult ? (game.winner?.id === game.homeTeam.id || false) : null}
+                      isTie={hasResult && !!game.isTie}
+                      isCorrectPick={userPick?.isCorrect ?? null}
+                      isFavoritePreselect={isFavGame && selectedTeamId === game.homeTeam.id}
+                      isResultsView={noPickResultsView || withPickResultsView}
+                      recentForm={teamForm[game.homeTeam.id]}
+                      formPosition="left"
+                      compact
+                      onClick={() => handleTeamClick(game.id, game.homeTeam.id)}
+                    />
+                  </div>
+                </div>
+              );
+            }
+
+            // ── Full card ──────────────────────────────────────────────────
             return (
               <div key={game.id} className={`rounded-xl border p-4 ${gameTimeLocked ? "border-amber-800/50 bg-zinc-900" : "border-zinc-800 bg-zinc-900"}`}>
                 <div className="mb-3 flex items-center justify-between gap-2">
-                  {game.gameTime ? (
-                    <p className="text-xs text-zinc-500">
-                      {new Date(game.gameTime).toLocaleString(undefined, {
-                        weekday: "short",
-                        month: "short",
-                        day: "numeric",
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })}
-                    </p>
+                  {gameTimeStr ? (
+                    <p className="text-xs text-zinc-500">{gameTimeStr}</p>
                   ) : <span />}
                   {gameTimeLocked && !isHistorical && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-amber-600/20 px-2 py-0.5 text-xs font-semibold text-amber-400">
@@ -532,7 +689,7 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
           })}
         </div>
 
-        {/* Submit — current week only, not historical or viewing other user */}
+        {/* Submit */}
         {!isHistorical && !isViewingOther && !isLocked && !weekLockedNoSubmission && (
           <div className="mt-8 flex flex-col items-center gap-2">
             {timedAutolocking && timeLockedGames.length > 0 && (
@@ -556,7 +713,7 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
           </div>
         )}
 
-        {/* Historical with no submission — just a quiet note */}
+        {/* Historical with no submission */}
         {isHistorical && !pickSet && anyGameHasResult && (
           <div className="mt-6 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-center">
             <p className="text-sm text-zinc-500">You didn&apos;t submit picks for this week.</p>
