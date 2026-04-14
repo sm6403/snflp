@@ -1,4 +1,4 @@
 {
   "framework": "nextjs",
-  "buildCommand": "npx prisma migrate deploy && next build"
+  "buildCommand": "node scripts/migrate-with-retry.mjs && next build"
 }
