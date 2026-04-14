@@ -15,7 +15,7 @@ export default async function SettingsPage() {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { alias: true, email: true, name: true },
+    select: { alias: true, email: true, name: true, emailReminders: true },
   });
 
   if (!user) redirect("/signin");
@@ -40,6 +40,7 @@ export default async function SettingsPage() {
         <UserSettingsContent
           initialAlias={user.alias ?? user.name ?? ""}
           initialEmail={user.email}
+          initialEmailReminders={user.emailReminders}
         />
       </main>
     </div>

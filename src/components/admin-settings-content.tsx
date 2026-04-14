@@ -6,9 +6,11 @@ import { AdminHeader } from "./admin-header";
 interface AppSettings {
   id: string;
   mode: string;
+  emailRemindersEnabled: boolean;
 }
 
 type BulkLockState = "idle" | "locking" | "unlocking";
+type TestEmailState = "idle" | "sending" | "sent" | "error";
 
 // ─── Admin password change ────────────────────────────────────────────────────
 
@@ -125,6 +127,9 @@ export function AdminSettingsContent() {
   const [bulkLockState, setBulkLockState] = useState<BulkLockState>("idle");
   const [bulkLockMsg, setBulkLockMsg] = useState<string | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [testEmailAddress, setTestEmailAddress] = useState("");
+  const [testEmailState, setTestEmailState] = useState<TestEmailState>("idle");
+  const [testEmailMsg, setTestEmailMsg] = useState<string | null>(null);
 
   const fetchSettings = useCallback(async () => {
     const res = await fetch("/api/admin/settings");
@@ -170,6 +175,38 @@ export function AdminSettingsContent() {
     const newMode = settings.mode === "live" ? "test" : "live";
     setSettings((s) => s ? { ...s, mode: newMode } : s);
     await patchSettings({ mode: newMode });
+  }
+
+  async function handleRemindersToggle() {
+    if (!settings || saving) return;
+    const newVal = !settings.emailRemindersEnabled;
+    setSettings((s) => s ? { ...s, emailRemindersEnabled: newVal } : s);
+    await patchSettings({ emailRemindersEnabled: newVal });
+  }
+
+  async function handleTestEmail(e: React.FormEvent) {
+    e.preventDefault();
+    setTestEmailState("sending");
+    setTestEmailMsg(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "testEmail", testEmailAddress }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTestEmailState("sent");
+        setTestEmailMsg(`Test email sent to ${data.sentTo}`);
+        setTimeout(() => { setTestEmailState("idle"); setTestEmailMsg(null); }, 5000);
+      } else {
+        setTestEmailState("error");
+        setTestEmailMsg(data.error ?? "Failed to send test email");
+      }
+    } catch {
+      setTestEmailState("error");
+      setTestEmailMsg("Network error");
+    }
   }
 
   async function handleBulkFavoriteLock(locked: boolean) {
@@ -290,6 +327,63 @@ export function AdminSettingsContent() {
             </div>
 
             {saved && <p className="text-sm text-green-400">Settings saved.</p>}
+
+            {/* Email reminders */}
+            <div className="rounded-lg border border-zinc-800 bg-zinc-800/50 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-medium text-zinc-100">Email Reminders</h3>
+                  <p className="mt-1 text-sm text-zinc-400">
+                    {settings?.emailRemindersEnabled
+                      ? "Enabled — users with reminders on will receive emails."
+                      : "Disabled — no reminder emails will be sent to anyone."}
+                  </p>
+                </div>
+                <button
+                  onClick={handleRemindersToggle}
+                  disabled={saving}
+                  aria-label={`${settings?.emailRemindersEnabled ? "Disable" : "Enable"} email reminders`}
+                  className={`relative inline-flex h-7 w-14 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                    settings?.emailRemindersEnabled ? "bg-indigo-600" : "bg-zinc-600"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                      settings?.emailRemindersEnabled ? "translate-x-8" : "translate-x-1"
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Test email sub-section */}
+              <div className="mt-5 border-t border-zinc-700/60 pt-5">
+                <p className="mb-3 text-sm font-medium text-zinc-300">Send a test email</p>
+                <form onSubmit={handleTestEmail} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                  <div className="flex-1">
+                    <label className="mb-1.5 block text-xs font-medium text-zinc-400">Email address</label>
+                    <input
+                      type="email"
+                      value={testEmailAddress}
+                      onChange={(e) => setTestEmailAddress(e.target.value)}
+                      placeholder="you@example.com"
+                      className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={testEmailState === "sending" || !testEmailAddress.trim()}
+                    className="rounded-lg bg-zinc-700 px-4 py-2 text-sm font-medium text-zinc-200 transition-colors hover:bg-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {testEmailState === "sending" ? "Sending…" : "Send Test"}
+                  </button>
+                </form>
+                {testEmailMsg && (
+                  <p className={`mt-2 text-sm ${testEmailState === "sent" ? "text-green-400" : "text-red-400"}`}>
+                    {testEmailMsg}
+                  </p>
+                )}
+              </div>
+            </div>
 
             {/* Admin password change */}
             <AdminPasswordSection isSuperAdmin={isSuperAdmin} />

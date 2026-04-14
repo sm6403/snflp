@@ -231,20 +231,83 @@ function PasswordSection() {
   );
 }
 
+// ─── Email reminders section ──────────────────────────────────────────────────
+
+function EmailRemindersSection({ initialEmailReminders }: { initialEmailReminders: boolean }) {
+  const [enabled, setEnabled] = useState(initialEmailReminders);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+
+  async function toggle() {
+    const newVal = !enabled;
+    setEnabled(newVal); // optimistic
+    setSaving(true);
+    setStatus(null);
+    try {
+      const res = await fetch("/api/user/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emailReminders: newVal }),
+      });
+      if (res.ok) {
+        setStatus({ type: "success", msg: newVal ? "Email reminders enabled." : "Email reminders disabled." });
+        setTimeout(() => setStatus(null), 3000);
+      } else {
+        setEnabled(!newVal); // revert
+        const d = await res.json().catch(() => ({}));
+        setStatus({ type: "error", msg: d.error ?? "Failed to update." });
+      }
+    } catch {
+      setEnabled(!newVal); // revert
+      setStatus({ type: "error", msg: "Network error." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <SettingsCard title="Email Reminders">
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-sm text-zinc-400">
+          Receive reminder emails before the weekly picks deadline.
+        </p>
+        <button
+          onClick={toggle}
+          disabled={saving}
+          aria-label={`${enabled ? "Disable" : "Enable"} email reminders`}
+          className={`relative inline-flex h-7 w-14 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+            enabled ? "bg-indigo-600" : "bg-zinc-600"
+          }`}
+        >
+          <span
+            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+              enabled ? "translate-x-8" : "translate-x-1"
+            }`}
+          />
+        </button>
+      </div>
+      {status && <StatusMsg {...status} />}
+    </SettingsCard>
+  );
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export function UserSettingsContent({
   initialAlias,
   initialEmail,
+  initialEmailReminders,
 }: {
   initialAlias: string;
   initialEmail: string;
+  initialEmailReminders: boolean;
 }) {
   return (
     <div className="space-y-4">
       <AliasSection initialAlias={initialAlias} />
       <EmailSection initialEmail={initialEmail} />
       <PasswordSection />
+      <EmailRemindersSection initialEmailReminders={initialEmailReminders} />
     </div>
   );
 }

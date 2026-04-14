@@ -16,11 +16,13 @@ model User {
   favoriteTeamLocked Boolean  @default(false)
   disabled           Boolean  @default(true)
   showOnLeaderboard Boolean   @default(true)
+  emailReminders    Boolean   @default(true)
   lastLoginAt       DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   pickSets          PickSet[]
   lmsPicks          LmsPick[]
+  notificationLogs  NotificationLog[]
 }
 
 model Season {
@@ -53,11 +55,12 @@ model Week {
   lockAt              DateTime?
   confirmedAt         DateTime?
   season      Season       @relation(fields: [seasonId], references: [id])
-  games       Game[]
-  pickSets    PickSet[]
-  teamRecords TeamRecord[]
-  lmsPicks    LmsPick[]
-  createdAt   DateTime     @default(now())
+  games            Game[]
+  pickSets         PickSet[]
+  teamRecords      TeamRecord[]
+  lmsPicks         LmsPick[]
+  notificationLogs NotificationLog[]
+  createdAt        DateTime          @default(now())
 
   @@unique([seasonId, number])
 }
@@ -138,10 +141,11 @@ model Pick {
 }
 
 model AppSettings {
-  id           String  @id @default("singleton")
-  mode         String  @default("live")
-  testSeasonId String?
-  testWeekId   String?
+  id                    String  @id @default("singleton")
+  mode                  String  @default("live")
+  testSeasonId          String?
+  testWeekId            String?
+  emailRemindersEnabled Boolean @default(false)
 }
 
 model AdminUser {
@@ -178,4 +182,16 @@ model AdminAuditLog {
   action    String   // e.g. "LOCK_WEEK", "EDIT_PICK", "CONFIRM_RESULTS"
   detail    String   // JSON string with contextual data
   createdAt DateTime @default(now())
+}
+
+model NotificationLog {
+  id      String   @id @default(cuid())
+  userId  String
+  weekId  String
+  type    String   // "pre_lock_12h" | "thursday_noon"
+  sentAt  DateTime @default(now())
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  week    Week     @relation(fields: [weekId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekId, type])
 }
