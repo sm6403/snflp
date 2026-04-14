@@ -23,6 +23,7 @@ model User {
   pickSets          PickSet[]
   lmsPicks          LmsPick[]
   notificationLogs  NotificationLog[]
+  divisionMemberships UserDivision[]
 }
 
 model Season {
@@ -35,11 +36,14 @@ model Season {
   ruleFavouriteTeamBonusWin  Boolean  @default(false)
   ruleLMS                    Boolean  @default(false)
   ruleLMSRound               Int      @default(1)
+  usesDivisions              Boolean  @default(false)
   parentSeasonId   String?
   parentSeason     Season?  @relation("PostSeason", fields: [parentSeasonId], references: [id])
   childSeasons     Season[] @relation("PostSeason")
   weeks            Week[]
   lmsPicks         LmsPick[]
+  divisions        Division[]
+  userDivisions    UserDivision[]
   createdAt        DateTime @default(now())
 
   @@unique([year, type])
@@ -189,6 +193,31 @@ model AdminAuditLog {
   action    String   // e.g. "LOCK_WEEK", "EDIT_PICK", "CONFIRM_RESULTS"
   detail    String   // JSON string with contextual data
   createdAt DateTime @default(now())
+}
+
+model Division {
+  id            String         @id @default(cuid())
+  seasonId      String
+  name          String
+  isDefault     Boolean        @default(false)
+  season        Season         @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  userDivisions UserDivision[]
+  createdAt     DateTime       @default(now())
+
+  @@unique([seasonId, name])
+}
+
+model UserDivision {
+  id         String   @id @default(cuid())
+  userId     String
+  seasonId   String
+  divisionId String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  season     Season   @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  division   Division @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, seasonId])
 }
 
 model NotificationLog {

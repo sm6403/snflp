@@ -17,8 +17,22 @@ interface User {
   createdAt: string;
 }
 
+interface DivisionOption {
+  id: string;
+  name: string;
+  isDefault: boolean;
+}
+
+interface DivisionContext {
+  seasonId: string;
+  seasonName: string;
+  divisions: DivisionOption[];
+  currentDivisionId: string | null;
+}
+
 export function AdminManageUser({ userId }: { userId: string }) {
   const [user, setUser] = useState<User | null>(null);
+  const [divisionContext, setDivisionContext] = useState<DivisionContext | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -27,6 +41,7 @@ export function AdminManageUser({ userId }: { userId: string }) {
     if (res.ok) {
       const data = await res.json();
       setUser(data.user);
+      setDivisionContext(data.divisionContext ?? null);
     }
     setLoading(false);
   }, [userId]);
@@ -189,6 +204,32 @@ export function AdminManageUser({ userId }: { userId: string }) {
             onToggleLock={() => handleUpdate("favoriteTeamLocked", !user.favoriteTeamLocked)}
           />
         </Section>
+
+        {/* Division (only shown when current season uses divisions) */}
+        {divisionContext && (
+          <Section title={`Division — ${divisionContext.seasonName}`}>
+            <DivisionForm
+              divisions={divisionContext.divisions}
+              currentDivisionId={divisionContext.currentDivisionId}
+              onSave={async (divisionId) => {
+                setMessage("");
+                const res = await fetch(`/api/admin/users/${userId}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ divisionId, seasonId: divisionContext.seasonId }),
+                });
+                const data = await res.json();
+                if (res.ok) {
+                  setDivisionContext((prev) => prev ? { ...prev, currentDivisionId: divisionId } : null);
+                  setMessage("Division updated");
+                  setTimeout(() => setMessage(""), 3000);
+                } else {
+                  setMessage(`Error: ${data.error ?? res.status}`);
+                }
+              }}
+            />
+          </Section>
+        )}
       </main>
     </div>
   );
@@ -290,6 +331,50 @@ function NameForm({
       >
         Save Name
       </button>
+    </div>
+  );
+}
+
+function DivisionForm({
+  divisions,
+  currentDivisionId,
+  onSave,
+}: {
+  divisions: DivisionOption[];
+  currentDivisionId: string | null;
+  onSave: (divisionId: string) => void;
+}) {
+  const [selected, setSelected] = useState(currentDivisionId ?? "");
+
+  useEffect(() => {
+    setSelected(currentDivisionId ?? "");
+  }, [currentDivisionId]);
+
+  const currentName = divisions.find((d) => d.id === currentDivisionId)?.name ?? "—";
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-zinc-400">
+        Current division: <span className="font-medium text-zinc-200">{currentName}</span>
+      </p>
+      <div className="flex gap-3">
+        <select
+          value={selected}
+          onChange={(e) => setSelected(e.target.value)}
+          className="flex-1 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-50 focus:border-zinc-500 focus:outline-none"
+        >
+          {divisions.map((d) => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
+        </select>
+        <button
+          onClick={() => selected && onSave(selected)}
+          disabled={!selected || selected === currentDivisionId}
+          className="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-40"
+        >
+          Save Division
+        </button>
+      </div>
     </div>
   );
 }

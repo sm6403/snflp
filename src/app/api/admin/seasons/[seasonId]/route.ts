@@ -20,6 +20,7 @@ export async function PATCH(request: Request, { params }: Params) {
     ruleFavouriteTeamBonusWin?: boolean;
     ruleLMS?: boolean;
     incrementLMSRound?: boolean; // start a new LMS round
+    usesDivisions?: boolean;
   };
 
   const season = await prisma.season.findUnique({ where: { id: seasonId } });
@@ -49,6 +50,7 @@ export async function PATCH(request: Request, { params }: Params) {
         ...(body.ruleFavouriteTeamBonusWin !== undefined && { ruleFavouriteTeamBonusWin: body.ruleFavouriteTeamBonusWin }),
         ...(body.ruleLMS !== undefined && { ruleLMS: body.ruleLMS }),
         ...(body.incrementLMSRound && { ruleLMSRound: { increment: 1 } }),
+        ...(body.usesDivisions !== undefined && { usesDivisions: body.usesDivisions }),
       },
       include: {
         parentSeason: { select: { id: true, year: true, type: true } },
@@ -63,6 +65,16 @@ export async function PATCH(request: Request, { params }: Params) {
         },
       },
     });
+
+    // Auto-create default division when usesDivisions is first enabled
+    if (body.usesDivisions === true) {
+      const existing = await tx.division.findFirst({ where: { seasonId, isDefault: true } });
+      if (!existing) {
+        await tx.division.create({
+          data: { seasonId, name: "SNFLP Division", isDefault: true },
+        });
+      }
+    }
 
     // Add a week (postseason)
     if (body.addWeek) {

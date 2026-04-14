@@ -15,7 +15,10 @@ export async function GET() {
   }
   const currentUserId = session?.user?.id ?? "";
 
-  const season = await prisma.season.findFirst({ where: { isCurrent: true } });
+  const season = await prisma.season.findFirst({
+    where: { isCurrent: true },
+    select: { id: true, year: true, usesDivisions: true },
+  });
   if (!season) {
     return NextResponse.json({ season: null, users: [], mostRecentWeekLabel: null, currentUserId });
   }
@@ -29,7 +32,7 @@ export async function GET() {
 
   if (confirmedWeeks.length === 0) {
     return NextResponse.json({
-      season: { id: season.id, year: season.year },
+      season: { id: season.id, year: season.year, usesDivisions: season.usesDivisions },
       mostRecentWeekLabel: null,
       currentUserId,
       users: [],
@@ -45,6 +48,27 @@ export async function GET() {
     where: { disabled: false, showOnLeaderboard: true },
     select: { id: true, name: true, alias: true, email: true, favoriteTeam: true },
   });
+
+  // Division data (only when season uses divisions)
+  let divisionMap = new Map<string, string>(); // userId → divisionName
+  let defaultDivisionName = "SNFLP Division";
+  if (season.usesDivisions) {
+    const divisions = await prisma.division.findMany({
+      where: { seasonId: season.id },
+      select: { id: true, name: true, isDefault: true },
+    });
+    const defaultDiv = divisions.find((d) => d.isDefault);
+    if (defaultDiv) defaultDivisionName = defaultDiv.name;
+    const divById = new Map(divisions.map((d) => [d.id, d.name]));
+    const memberships = await prisma.userDivision.findMany({
+      where: { seasonId: season.id },
+      select: { userId: true, divisionId: true },
+    });
+    for (const m of memberships) {
+      const name = divById.get(m.divisionId);
+      if (name) divisionMap.set(m.userId, name);
+    }
+  }
 
   // Fetch all pick sets across confirmed weeks for all users
   const pickSets = await prisma.pickSet.findMany({
@@ -115,6 +139,9 @@ export async function GET() {
       const prevRank = previousRanks?.get(u.id) ?? null;
       const positionChange = prevRank !== null ? prevRank - rank : null;
       const displayName = u.alias ?? u.name ?? u.email;
+      const divisionName = season.usesDivisions
+        ? (divisionMap.get(u.id) ?? defaultDivisionName)
+        : null;
       return {
         userId: u.id,
         displayName,
@@ -124,12 +151,13 @@ export async function GET() {
         graded: s.graded,
         pct,
         positionChange,
+        divisionName,
       };
     })
     .sort((a, b) => a.rank - b.rank);
 
   return NextResponse.json({
-    season: { id: season.id, year: season.year },
+    season: { id: season.id, year: season.year, usesDivisions: season.usesDivisions },
     mostRecentWeekLabel: mostRecentWeek.label,
     currentUserId,
     users: result,

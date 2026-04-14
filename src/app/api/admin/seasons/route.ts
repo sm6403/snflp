@@ -15,7 +15,7 @@ export async function GET() {
       select: {
         id: true, year: true, type: true, mode: true,
         isCurrent: true, timedAutolocking: true, ruleFavouriteTeamBonusWin: true,
-        ruleLMS: true, ruleLMSRound: true, createdAt: true,
+        ruleLMS: true, ruleLMSRound: true, usesDivisions: true, createdAt: true,
         parentSeasonId: true,
         parentSeason: { select: { id: true, year: true, type: true } },
         _count: { select: { weeks: true } },

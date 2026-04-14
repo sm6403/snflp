@@ -32,7 +32,37 @@ export async function GET(
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ user });
+  // Include division context for the current active season (if it uses divisions)
+  const currentSeason = await prisma.season.findFirst({
+    where: { isCurrent: true },
+    select: {
+      id: true,
+      year: true,
+      type: true,
+      usesDivisions: true,
+      divisions: {
+        orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+        select: { id: true, name: true, isDefault: true },
+      },
+    },
+  });
+
+  let divisionContext = null;
+  if (currentSeason?.usesDivisions) {
+    const membership = await prisma.userDivision.findUnique({
+      where: { userId_seasonId: { userId: id, seasonId: currentSeason.id } },
+      select: { divisionId: true },
+    });
+    const defaultDiv = currentSeason.divisions.find((d) => d.isDefault);
+    divisionContext = {
+      seasonId: currentSeason.id,
+      seasonName: `${currentSeason.year} ${currentSeason.type === "postseason" ? "Post-Season" : "Regular Season"}`,
+      divisions: currentSeason.divisions,
+      currentDivisionId: membership?.divisionId ?? defaultDiv?.id ?? null,
+    };
+  }
+
+  return NextResponse.json({ user, divisionContext });
 }
 
 export async function DELETE(
@@ -104,6 +134,26 @@ export async function PATCH(
   }
   if (typeof body.favoriteTeamLocked === "boolean") {
     data.favoriteTeamLocked = body.favoriteTeamLocked;
+  }
+
+  // Division assignment — handled separately from the main user update
+  if (typeof body.divisionId === "string" && typeof body.seasonId === "string") {
+    const division = await prisma.division.findFirst({
+      where: { id: body.divisionId, seasonId: body.seasonId },
+    });
+    if (!division) {
+      return NextResponse.json({ error: "Division not found" }, { status: 404 });
+    }
+    await prisma.userDivision.upsert({
+      where: { userId_seasonId: { userId: id, seasonId: body.seasonId } },
+      create: { userId: id, seasonId: body.seasonId, divisionId: body.divisionId },
+      update: { divisionId: body.divisionId },
+    });
+    // Allow returning early if only division was changed
+    if (Object.keys(data).length === 0) {
+      const user = await prisma.user.findUnique({ where: { id }, select: USER_SELECT });
+      return NextResponse.json({ user });
+    }
   }
 
   if (Object.keys(data).length === 0) {

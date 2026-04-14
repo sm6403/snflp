@@ -34,6 +34,7 @@ interface SeasonSummary {
   ruleFavouriteTeamBonusWin: boolean;
   ruleLMS: boolean;
   ruleLMSRound: number;
+  usesDivisions: boolean;
   parentSeason: { id: string; year: number; type: string } | null;
   _count: { weeks: number };
   weeks: WeekSummary[];
@@ -484,7 +485,7 @@ function SeasonDetail({
   onNavigate: (view: View) => void;
   onRefresh: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"overview" | "custom-rules">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "custom-rules" | "divisions">("overview");
   const [addingWeek, setAddingWeek] = useState(false);
   const [settingCurrentWeek, setSettingCurrentWeek] = useState<string | null>(null);
   const [settingLock, setSettingLock] = useState<string | null>(null);
@@ -652,7 +653,7 @@ function SeasonDetail({
 
       {/* Tab bar */}
       <div className="flex gap-1 border-b border-zinc-800">
-        {(["overview", "custom-rules"] as const).map((tab) => (
+        {(["overview", "custom-rules", ...(season.usesDivisions ? ["divisions" as const] : [])] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -662,13 +663,17 @@ function SeasonDetail({
                 : "border-transparent text-zinc-500 hover:text-zinc-300"
             }`}
           >
-            {tab === "overview" ? "Overview" : "Custom Rules"}
+            {tab === "overview" ? "Overview" : tab === "custom-rules" ? "Custom Rules" : "Divisions"}
           </button>
         ))}
       </div>
 
       {activeTab === "custom-rules" && (
-        <CustomRulesTab season={season} />
+        <CustomRulesTab season={season} onRefresh={onRefresh} />
+      )}
+
+      {activeTab === "divisions" && season.usesDivisions && (
+        <DivisionsTab seasonId={season.id} />
       )}
 
       {activeTab === "overview" && <>
@@ -973,10 +978,11 @@ function SeasonDetail({
 
 // ─── Custom Rules Tab ─────────────────────────────────────────────────────────
 
-function CustomRulesTab({ season }: { season: SeasonSummary }) {
+function CustomRulesTab({ season, onRefresh }: { season: SeasonSummary; onRefresh: () => void }) {
   const [bonusWin, setBonusWin] = useState(season.ruleFavouriteTeamBonusWin);
   const [lms, setLms] = useState(season.ruleLMS);
   const [lmsRound, setLmsRound] = useState(season.ruleLMSRound);
+  const [divisions, setDivisions] = useState(season.usesDivisions);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1015,6 +1021,30 @@ function CustomRulesTab({ season }: { season: SeasonSummary }) {
       });
       if (res.ok) {
         setLms(next);
+      } else {
+        const d = await res.json();
+        setError(d.error ?? "Failed to save");
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleDivisions() {
+    const next = !divisions;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/seasons/${season.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ usesDivisions: next }),
+      });
+      if (res.ok) {
+        setDivisions(next);
+        onRefresh(); // refresh parent so tab appears/disappears
       } else {
         const d = await res.json();
         setError(d.error ?? "Failed to save");
@@ -1163,6 +1193,311 @@ function CustomRulesTab({ season }: { season: SeasonSummary }) {
           </button>
         </div>
       </div>
+
+      {/* Rule: Divisions */}
+      <div className="rounded-lg border border-zinc-800 bg-zinc-800/50 p-6">
+        <div className="flex items-start justify-between gap-6">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="font-medium text-zinc-100">🏆 Divisions</h3>
+              {divisions && (
+                <span className="inline-flex rounded-full bg-blue-600/20 px-2 py-0.5 text-xs font-semibold text-blue-400">
+                  Active
+                </span>
+              )}
+            </div>
+            <p className="mt-2 text-sm text-zinc-400">
+              Split players into divisions. The leaderboard gains an Overall view (all players ranked together,
+              division shown) and a By Division view (ranked within each division).
+              Assign players to divisions in the <strong className="text-zinc-300">Divisions</strong> tab.
+            </p>
+            <p className="mt-1.5 text-xs text-zinc-600">
+              Enabling this auto-creates the default &ldquo;SNFLP Division&rdquo; — all players start
+              there until re-assigned.
+            </p>
+          </div>
+          <button
+            onClick={toggleDivisions}
+            disabled={saving}
+            aria-label={`${divisions ? "Disable" : "Enable"} Divisions`}
+            className={`relative inline-flex h-7 w-14 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+              divisions ? "bg-blue-600" : "bg-zinc-600"
+            }`}
+          >
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                divisions ? "translate-x-8" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Divisions Tab ─────────────────────────────────────────────────────────────
+
+interface DivisionRow {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  _count: { userDivisions: number };
+}
+
+interface DivisionUser {
+  id: string;
+  displayName: string;
+  divisionId: string | null;
+}
+
+function DivisionsTab({ seasonId }: { seasonId: string }) {
+  const [divisions, setDivisions] = useState<DivisionRow[]>([]);
+  const [users, setUsers] = useState<DivisionUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<Record<string, string>>({}); // divisionId → draft name
+  const [saving, setSaving] = useState<string | null>(null); // divisionId being saved
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [creatingDiv, setCreatingDiv] = useState(false);
+
+  const fetchData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/seasons/${seasonId}/divisions`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to load");
+      setDivisions(data.divisions);
+      setUsers(data.users);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load divisions");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchData(); }, [seasonId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleRename(divisionId: string) {
+    const name = renaming[divisionId]?.trim();
+    if (!name) return;
+    setSaving(divisionId);
+    try {
+      const res = await fetch(`/api/admin/seasons/${seasonId}/divisions/${divisionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error ?? "Failed to rename"); return; }
+      setDivisions((prev) => prev.map((d) => d.id === divisionId ? { ...d, name: data.division.name } : d));
+      setRenaming((prev) => { const n = { ...prev }; delete n[divisionId]; return n; });
+    } catch { setError("Network error"); }
+    finally { setSaving(null); }
+  }
+
+  async function handleDelete(divisionId: string, divisionName: string) {
+    if (!window.confirm(`Delete division "${divisionName}"? All its members will be moved to the default division.`)) return;
+    setSaving(divisionId);
+    try {
+      const res = await fetch(`/api/admin/seasons/${seasonId}/divisions/${divisionId}`, { method: "DELETE" });
+      if (!res.ok) { const d = await res.json(); setError(d.error ?? "Failed"); return; }
+      await fetchData();
+    } catch { setError("Network error"); }
+    finally { setSaving(null); }
+  }
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newName.trim()) return;
+    setCreatingDiv(true);
+    try {
+      const res = await fetch(`/api/admin/seasons/${seasonId}/divisions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error ?? "Failed to create"); return; }
+      setDivisions((prev) => [...prev, data.division]);
+      setNewName("");
+      setAdding(false);
+    } catch { setError("Network error"); }
+    finally { setCreatingDiv(false); }
+  }
+
+  async function handleAssign(userId: string, divisionId: string) {
+    // Optimistic update
+    setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, divisionId } : u));
+    try {
+      const res = await fetch(`/api/admin/users/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ divisionId, seasonId }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        setError(d.error ?? "Failed to assign");
+        await fetchData(); // revert
+      } else {
+        // Refresh division member counts
+        const updated = await fetch(`/api/admin/seasons/${seasonId}/divisions`);
+        if (updated.ok) { const data = await updated.json(); setDivisions(data.divisions); }
+      }
+    } catch { setError("Network error"); await fetchData(); }
+  }
+
+  if (loading) return <p className="text-sm text-zinc-400">Loading divisions…</p>;
+
+  return (
+    <div className="space-y-4">
+      {error && (
+        <div className="rounded-lg border border-red-700 bg-red-900/20 px-4 py-3">
+          <p className="text-sm text-red-400">{error}</p>
+        </div>
+      )}
+
+      {/* Division list */}
+      {divisions.map((div) => {
+        const draftName = renaming[div.id];
+        const isRenaming = draftName !== undefined;
+        const divUsers = users.filter((u) => u.divisionId === div.id);
+
+        return (
+          <div key={div.id} className="rounded-lg border border-zinc-800 bg-zinc-800/50 p-5">
+            <div className="flex items-center justify-between gap-3">
+              {isRenaming ? (
+                <div className="flex flex-1 items-center gap-2">
+                  <input
+                    type="text"
+                    value={draftName}
+                    onChange={(e) => setRenaming((prev) => ({ ...prev, [div.id]: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleRename(div.id); if (e.key === "Escape") setRenaming((prev) => { const n = { ...prev }; delete n[div.id]; return n; }); }}
+                    autoFocus
+                    className="flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+                  />
+                  <button
+                    onClick={() => handleRename(div.id)}
+                    disabled={saving === div.id || !draftName.trim()}
+                    className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+                  >
+                    {saving === div.id ? "…" : "Save"}
+                  </button>
+                  <button
+                    onClick={() => setRenaming((prev) => { const n = { ...prev }; delete n[div.id]; return n; })}
+                    className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 hover:bg-zinc-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-1 items-center gap-2">
+                  <span className="font-medium text-zinc-100">{div.name}</span>
+                  {div.isDefault && (
+                    <span className="inline-flex rounded-full bg-zinc-700/60 px-2 py-0.5 text-xs font-medium text-zinc-400">
+                      Default
+                    </span>
+                  )}
+                  <span className="text-xs text-zinc-500">{divUsers.length} player{divUsers.length !== 1 ? "s" : ""}</span>
+                </div>
+              )}
+              {!isRenaming && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setRenaming((prev) => ({ ...prev, [div.id]: div.name }))}
+                    className="rounded-md border border-zinc-700 px-3 py-1 text-xs text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
+                  >
+                    Rename
+                  </button>
+                  {!div.isDefault && (
+                    <button
+                      onClick={() => handleDelete(div.id, div.name)}
+                      disabled={saving === div.id}
+                      className="rounded-md px-3 py-1 text-xs text-red-500 hover:bg-red-900/20 hover:text-red-400 disabled:opacity-40"
+                    >
+                      {saving === div.id ? "…" : "Delete"}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Players in this division */}
+            {divUsers.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {divUsers.map((u) => (
+                  <span key={u.id} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900 px-2.5 py-0.5 text-xs text-zinc-300">
+                    {u.displayName}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Add division */}
+      {adding ? (
+        <form onSubmit={handleCreate} className="flex items-center gap-2">
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="Division name…"
+            autoFocus
+            className="flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-indigo-500 focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={creatingDiv || !newName.trim()}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
+          >
+            {creatingDiv ? "Adding…" : "Add"}
+          </button>
+          <button type="button" onClick={() => { setAdding(false); setNewName(""); }} className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-400 hover:bg-zinc-700">Cancel</button>
+        </form>
+      ) : (
+        <button
+          onClick={() => setAdding(true)}
+          className="rounded-lg border border-dashed border-zinc-700 px-4 py-2 text-sm text-zinc-500 transition-colors hover:border-zinc-500 hover:text-zinc-300"
+        >
+          + Add Division
+        </button>
+      )}
+
+      {/* Player → division assignment table */}
+      {users.length > 0 && (
+        <div className="rounded-lg border border-zinc-800 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-zinc-800 bg-zinc-800/60">
+                <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">Player</th>
+                <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">Division</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-800">
+              {users.map((u) => (
+                <tr key={u.id} className="bg-zinc-900">
+                  <td className="px-4 py-2.5 text-zinc-200">{u.displayName}</td>
+                  <td className="px-4 py-2.5">
+                    <select
+                      value={u.divisionId ?? ""}
+                      onChange={(e) => handleAssign(u.id, e.target.value)}
+                      className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+                    >
+                      {divisions.map((d) => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

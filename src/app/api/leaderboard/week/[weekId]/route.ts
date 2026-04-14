@@ -21,7 +21,10 @@ export async function GET(
 
   const week = await prisma.week.findUnique({
     where: { id: weekId },
-    select: { id: true, number: true, label: true, confirmedAt: true },
+    select: {
+      id: true, number: true, label: true, confirmedAt: true,
+      season: { select: { id: true, usesDivisions: true } },
+    },
   });
   if (!week) {
     return NextResponse.json({ error: "Week not found" }, { status: 404 });
@@ -31,6 +34,28 @@ export async function GET(
       { error: "Results have not been confirmed for this week" },
       { status: 403 }
     );
+  }
+
+  // Division data (only when season uses divisions)
+  const seasonId = week.season.id;
+  let divisionMap = new Map<string, string>(); // userId → divisionName
+  let defaultDivisionName = "SNFLP Division";
+  if (week.season.usesDivisions) {
+    const divisions = await prisma.division.findMany({
+      where: { seasonId },
+      select: { id: true, name: true, isDefault: true },
+    });
+    const defaultDiv = divisions.find((d) => d.isDefault);
+    if (defaultDiv) defaultDivisionName = defaultDiv.name;
+    const divById = new Map(divisions.map((d) => [d.id, d.name]));
+    const memberships = await prisma.userDivision.findMany({
+      where: { seasonId },
+      select: { userId: true, divisionId: true },
+    });
+    for (const m of memberships) {
+      const name = divById.get(m.divisionId);
+      if (name) divisionMap.set(m.userId, name);
+    }
   }
 
   // Fetch all pick sets for this week with pick correctness
@@ -51,7 +76,10 @@ export async function GET(
       const total = ps.picks.length;
       const pct = total > 0 ? Math.round((correct / total) * 100) : 0;
       const displayName = ps.user.alias ?? ps.user.name ?? ps.user.email;
-      return { userId: ps.userId, displayName, correct, total, pct };
+      const divisionName = week.season.usesDivisions
+        ? (divisionMap.get(ps.userId) ?? defaultDivisionName)
+        : null;
+      return { userId: ps.userId, displayName, correct, total, pct, divisionName };
     })
     .sort((a, b) => {
       if (b.correct !== a.correct) return b.correct - a.correct;
@@ -61,8 +89,9 @@ export async function GET(
     .map((u, idx) => ({ ...u, rank: idx + 1 }));
 
   return NextResponse.json({
-    week,
+    week: { id: week.id, number: week.number, label: week.label },
     currentUserId,
+    usesDivisions: week.season.usesDivisions,
     users: ranked,
   });
 }
