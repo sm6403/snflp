@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { AdminToggleButton } from "./admin-toggle-button";
@@ -205,8 +206,8 @@ function AdminAccountsSection() {
             </thead>
             <tbody className="divide-y divide-zinc-800">
               {admins.map((admin) => (
-                <>
-                  <tr key={admin.id} className="text-zinc-300">
+                <React.Fragment key={admin.id}>
+                  <tr className="text-zinc-300">
                     <td className="px-4 py-3 font-medium text-zinc-100">{admin.username}</td>
                     <td className="px-4 py-3 text-zinc-500">
                       {new Date(admin.createdAt).toLocaleDateString()}
@@ -240,7 +241,7 @@ function AdminAccountsSection() {
                     </td>
                   </tr>
                   {changePwId === admin.id && (
-                    <tr key={`${admin.id}-pw`} className="bg-zinc-800/40">
+                    <tr className="bg-zinc-800/40">
                       <td colSpan={4} className="px-4 py-3">
                         <div className="flex flex-wrap items-center gap-3">
                           <span className="text-xs text-zinc-400">New password for <span className="font-semibold text-zinc-200">{admin.username}</span>:</span>
@@ -272,7 +273,7 @@ function AdminAccountsSection() {
                       </td>
                     </tr>
                   )}
-                </>
+                </React.Fragment>
               ))}
             </tbody>
           </table>
