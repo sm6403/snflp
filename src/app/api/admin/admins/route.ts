@@ -11,7 +11,7 @@ export async function GET() {
   }
 
   const admins = await prisma.adminUser.findMany({
-    select: { id: true, username: true, createdAt: true, lastLoginAt: true },
+    select: { id: true, username: true, disabled: true, createdAt: true, lastLoginAt: true },
     orderBy: { createdAt: "asc" },
   });
 
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
   const hashedPassword = await bcrypt.hash(password, 12);
   const admin = await prisma.adminUser.create({
     data: { username: username.trim(), hashedPassword },
-    select: { id: true, username: true, createdAt: true, lastLoginAt: true },
+    select: { id: true, username: true, disabled: true, createdAt: true, lastLoginAt: true },
   });
 
   const caller = await getAdminName();

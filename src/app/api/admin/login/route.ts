@@ -20,6 +20,9 @@ export async function POST(request: Request) {
 
   // 2. Check DB admin users
   const adminUser = await prisma.adminUser.findUnique({ where: { username } });
+  if (adminUser?.disabled) {
+    return NextResponse.json({ error: "This account has been disabled" }, { status: 403 });
+  }
   if (adminUser && await bcrypt.compare(password, adminUser.hashedPassword)) {
     // Update last login timestamp
     await prisma.adminUser.update({

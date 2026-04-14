@@ -23,6 +23,7 @@ interface User {
 interface AdminAccount {
   id: string;
   username: string;
+  disabled: boolean;
   createdAt: string;
   lastLoginAt: string | null;
 }
@@ -38,6 +39,7 @@ function AdminAccountsSection() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   // Change password state
   const [changePwId, setChangePwId] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
@@ -89,6 +91,23 @@ function AdminAccountsSection() {
       fetchAdmins();
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  async function handleToggleDisabled(adminId: string, current: boolean) {
+    setTogglingId(adminId);
+    try {
+      const res = await fetch(`/api/admin/admins/${adminId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ disabled: !current }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAdmins((prev) => prev.map((a) => a.id === adminId ? { ...a, disabled: data.admin.disabled } : a));
+      }
+    } finally {
+      setTogglingId(null);
     }
   }
 
@@ -199,6 +218,7 @@ function AdminAccountsSection() {
             <thead className="bg-zinc-800/50 text-zinc-400">
               <tr>
                 <th className="px-4 py-3 font-medium">Username</th>
+                <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Created</th>
                 <th className="px-4 py-3 font-medium">Last Login</th>
                 <th className="px-4 py-3 font-medium text-right">Actions</th>
@@ -209,6 +229,15 @@ function AdminAccountsSection() {
                 <React.Fragment key={admin.id}>
                   <tr className="text-zinc-300">
                     <td className="px-4 py-3 font-medium text-zinc-100">{admin.username}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                        admin.disabled
+                          ? "bg-red-600/20 text-red-400"
+                          : "bg-green-600/20 text-green-400"
+                      }`}>
+                        {admin.disabled ? "Disabled" : "Active"}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-zinc-500">
                       {new Date(admin.createdAt).toLocaleDateString()}
                     </td>
@@ -219,6 +248,17 @@ function AdminAccountsSection() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleToggleDisabled(admin.id, admin.disabled)}
+                          disabled={togglingId === admin.id}
+                          className={`rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:opacity-40 ${
+                            admin.disabled
+                              ? "bg-green-600/20 text-green-400 hover:bg-green-600/30"
+                              : "bg-red-600/20 text-red-400 hover:bg-red-600/30"
+                          }`}
+                        >
+                          {togglingId === admin.id ? "…" : admin.disabled ? "Enable" : "Disable"}
+                        </button>
                         <button
                           onClick={() => {
                             setChangePwId(changePwId === admin.id ? null : admin.id);

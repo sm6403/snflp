@@ -14,24 +14,38 @@ export async function PATCH(
   }
 
   const { adminId } = await params;
-  const { password } = await request.json() as { password?: string };
-
-  if (!password || password.length < 8) {
-    return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
-  }
+  const body = await request.json() as { password?: string; disabled?: boolean };
 
   const admin = await prisma.adminUser.findUnique({ where: { id: adminId } });
   if (!admin) {
     return NextResponse.json({ error: "Admin not found" }, { status: 404 });
   }
 
-  const hashedPassword = await bcrypt.hash(password, 12);
-  await prisma.adminUser.update({ where: { id: adminId }, data: { hashedPassword } });
-
   const caller = await getAdminName();
-  await logAdminAction(caller ?? "superadmin", "CHANGE_ADMIN_PASSWORD", { username: admin.username });
 
-  return NextResponse.json({ success: true });
+  // Toggle disabled status
+  if (typeof body.disabled === "boolean") {
+    const updated = await prisma.adminUser.update({
+      where: { id: adminId },
+      data: { disabled: body.disabled },
+      select: { id: true, username: true, disabled: true, createdAt: true, lastLoginAt: true },
+    });
+    await logAdminAction(caller ?? "superadmin", body.disabled ? "DISABLE_ADMIN" : "ENABLE_ADMIN", { username: admin.username });
+    return NextResponse.json({ admin: updated });
+  }
+
+  // Change password
+  if (body.password) {
+    if (body.password.length < 8) {
+      return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
+    }
+    const hashedPassword = await bcrypt.hash(body.password, 12);
+    await prisma.adminUser.update({ where: { id: adminId }, data: { hashedPassword } });
+    await logAdminAction(caller ?? "superadmin", "CHANGE_ADMIN_PASSWORD", { username: admin.username });
+    return NextResponse.json({ success: true });
+  }
+
+  return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
 }
 
 // DELETE /api/admin/admins/[adminId] — remove a DB admin account (superadmin only)

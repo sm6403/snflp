@@ -142,6 +142,7 @@ model AdminUser {
   id             String    @id @default(cuid())
   username       String    @unique
   hashedPassword String
+  disabled       Boolean   @default(false)
   createdAt      DateTime  @default(now())
   lastLoginAt    DateTime?
 }

@@ -27,6 +27,8 @@ const ACTION_LABELS: Record<string, { label: string; colour: string }> = {
   UPDATE_USER:          { label: "Update User",         colour: "bg-zinc-700/40 text-zinc-300" },
   CREATE_ADMIN:         { label: "Create Admin",        colour: "bg-purple-700/30 text-purple-300" },
   DELETE_ADMIN:         { label: "Delete Admin",        colour: "bg-red-700/40 text-red-300" },
+  DISABLE_ADMIN:        { label: "Disable Admin",       colour: "bg-red-700/30 text-red-300" },
+  ENABLE_ADMIN:         { label: "Enable Admin",        colour: "bg-green-700/30 text-green-300" },
   CHANGE_ADMIN_PASSWORD:{ label: "Change Admin PW",     colour: "bg-purple-700/30 text-purple-300" },
 };
 

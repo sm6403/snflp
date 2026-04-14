@@ -1,0 +1,1 @@
+ALTER TABLE "AdminUser" ADD COLUMN "disabled" BOOLEAN NOT NULL DEFAULT false;
