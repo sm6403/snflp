@@ -37,6 +37,10 @@ export async function PATCH(request: Request) {
     testSeasonId?: string | null;
     testWeekId?: string | null;
     emailRemindersEnabled?: boolean;
+    reminderDayOfWeek?: number;
+    reminderHourUtc?: number;
+    reminderMinuteUtc?: number;
+    reminderOnlyUnsubmitted?: boolean;
     action?: "testEmail";
     testEmailAddress?: string;
   };
@@ -71,6 +75,17 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Invalid mode" }, { status: 400 });
   }
 
+  // Validate schedule fields if provided
+  if (body.reminderDayOfWeek !== undefined && (body.reminderDayOfWeek < 0 || body.reminderDayOfWeek > 6)) {
+    return NextResponse.json({ error: "reminderDayOfWeek must be 0–6" }, { status: 400 });
+  }
+  if (body.reminderHourUtc !== undefined && (body.reminderHourUtc < 0 || body.reminderHourUtc > 23)) {
+    return NextResponse.json({ error: "reminderHourUtc must be 0–23" }, { status: 400 });
+  }
+  if (body.reminderMinuteUtc !== undefined && (body.reminderMinuteUtc < 0 || body.reminderMinuteUtc > 59)) {
+    return NextResponse.json({ error: "reminderMinuteUtc must be 0–59" }, { status: 400 });
+  }
+
   const settings = await prisma.appSettings.upsert({
     where: { id: "singleton" },
     create: {
@@ -79,12 +94,20 @@ export async function PATCH(request: Request) {
       testSeasonId: body.testSeasonId ?? null,
       testWeekId: body.testWeekId ?? null,
       emailRemindersEnabled: body.emailRemindersEnabled ?? false,
+      reminderDayOfWeek: body.reminderDayOfWeek ?? 4,
+      reminderHourUtc: body.reminderHourUtc ?? 12,
+      reminderMinuteUtc: body.reminderMinuteUtc ?? 0,
+      reminderOnlyUnsubmitted: body.reminderOnlyUnsubmitted ?? false,
     },
     update: {
       ...(body.mode !== undefined && { mode: body.mode }),
       ...(body.testSeasonId !== undefined && { testSeasonId: body.testSeasonId }),
       ...(body.testWeekId !== undefined && { testWeekId: body.testWeekId }),
       ...(body.emailRemindersEnabled !== undefined && { emailRemindersEnabled: body.emailRemindersEnabled }),
+      ...(body.reminderDayOfWeek !== undefined && { reminderDayOfWeek: body.reminderDayOfWeek }),
+      ...(body.reminderHourUtc !== undefined && { reminderHourUtc: body.reminderHourUtc }),
+      ...(body.reminderMinuteUtc !== undefined && { reminderMinuteUtc: body.reminderMinuteUtc }),
+      ...(body.reminderOnlyUnsubmitted !== undefined && { reminderOnlyUnsubmitted: body.reminderOnlyUnsubmitted }),
     },
   });
 

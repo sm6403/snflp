@@ -141,11 +141,18 @@ model Pick {
 }
 
 model AppSettings {
-  id                    String  @id @default("singleton")
-  mode                  String  @default("live")
-  testSeasonId          String?
-  testWeekId            String?
-  emailRemindersEnabled Boolean @default(false)
+  id                      String  @id @default("singleton")
+  mode                    String  @default("live")
+  testSeasonId            String?
+  testWeekId              String?
+  emailRemindersEnabled   Boolean @default(false)
+  // Scheduled weekly reminder: which day + time (UTC) to send
+  // dayOfWeek: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+  reminderDayOfWeek       Int     @default(4)
+  reminderHourUtc         Int     @default(12)
+  reminderMinuteUtc       Int     @default(0)
+  // When true, only send to users who have NOT yet locked their picks this week
+  reminderOnlyUnsubmitted Boolean @default(false)
 }
 
 model AdminUser {

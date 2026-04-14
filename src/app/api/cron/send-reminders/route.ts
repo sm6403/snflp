@@ -9,10 +9,11 @@ import { preLockTemplate, thursdayTemplate } from "@/lib/email-templates";
 //
 // Triggers:
 //   1. Pre-lock: sends 12h before week.lockAt (20-min window to tolerate cold starts)
-//   2. Thursday noon: sends at 12:00 UTC (= 08:00 ET winter / 08:00 ET summer varies — adjust if needed)
+//   2. Scheduled weekly reminder: fires on the admin-configured day + UTC time
+//      (20-min window; @@unique on NotificationLog prevents double-sends)
 //
-// Deduplication: NotificationLog has @@unique([userId, weekId, type]) so duplicate cron
-// invocations within the same window are silently rejected by the DB constraint.
+// The "thursday_noon" type name is kept for existing log rows even though the
+// schedule is now configurable — new rows still use the same type key.
 export async function GET(request: Request) {
   // ── Auth ─────────────────────────────────────────────────────────────────────
   const cronSecret = process.env.CRON_SECRET;
@@ -30,6 +31,13 @@ export async function GET(request: Request) {
   if (!appSettings?.emailRemindersEnabled) {
     return NextResponse.json({ skipped: true, reason: "emailRemindersEnabled is false" });
   }
+
+  const {
+    reminderDayOfWeek,
+    reminderHourUtc,
+    reminderMinuteUtc,
+    reminderOnlyUnsubmitted,
+  } = appSettings;
 
   const appUrl = (process.env.APP_URL ?? "").replace(/\/$/, "");
   const now = new Date();
@@ -55,6 +63,46 @@ export async function GET(request: Request) {
     return NextResponse.json({ skipped: true, reason: "No current week" });
   }
 
+  // ── Helper: build eligible user list ─────────────────────────────────────────
+  async function getEligibleUsers(alreadySentIds: string[]) {
+    // Base filter: active + opted-in + not already notified this week+type
+    const baseWhere = {
+      disabled: false,
+      emailReminders: true,
+      ...(alreadySentIds.length > 0 && { id: { notIn: alreadySentIds } }),
+    };
+
+    if (!reminderOnlyUnsubmitted) {
+      return prisma.user.findMany({
+        where: baseWhere,
+        select: { id: true, email: true, alias: true, name: true },
+      });
+    }
+
+    // "Only unsubmitted" mode: exclude users who have already locked their picks
+    const submittedUserIds = (
+      await prisma.pickSet.findMany({
+        where: { weekId: week!.id, lockedAt: { not: null } },
+        select: { userId: true },
+      })
+    ).map((p) => p.userId);
+
+    return prisma.user.findMany({
+      where: {
+        ...baseWhere,
+        ...(submittedUserIds.length > 0 && {
+          id: {
+            notIn: [
+              ...(alreadySentIds.length > 0 ? alreadySentIds : []),
+              ...submittedUserIds,
+            ],
+          },
+        }),
+      },
+      select: { id: true, email: true, alias: true, name: true },
+    });
+  }
+
   // ── Helper: send to eligible users ────────────────────────────────────────────
   async function sendToEligibleUsers(
     type: "pre_lock_12h" | "thursday_noon",
@@ -67,15 +115,7 @@ export async function GET(request: Request) {
     });
     const alreadySentIds = alreadySent.map((l) => l.userId);
 
-    // Query eligible users: active, opted-in, not yet sent
-    const users = await prisma.user.findMany({
-      where: {
-        disabled: false,
-        emailReminders: true,
-        ...(alreadySentIds.length > 0 && { id: { notIn: alreadySentIds } }),
-      },
-      select: { id: true, email: true, alias: true, name: true },
-    });
+    const users = await getEligibleUsers(alreadySentIds);
 
     let sent = 0;
     let errors = 0;
@@ -121,10 +161,27 @@ export async function GET(request: Request) {
     }
   }
 
-  // ── Trigger 2: Thursday noon UTC ──────────────────────────────────────────────
-  // getUTCDay() === 4 is Thursday; getUTCHours() === 12 is noon UTC (08:00 ET winter).
-  // Change 12 → 16 if you want noon ET (summer/winter ET is UTC-4/UTC-5).
-  if (now.getUTCDay() === 4 && now.getUTCHours() === 12) {
+  // ── Trigger 2: Admin-configured weekly scheduled reminder ─────────────────────
+  // Check: correct day-of-week, correct hour, and within the 20-min window after
+  // the configured minute (cron fires every 15 min so this always catches one slot).
+  const targetMinuteMs =
+    new Date(
+      Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate(),
+        reminderHourUtc,
+        reminderMinuteUtc,
+        0
+      )
+    ).getTime();
+  const windowEndMs = targetMinuteMs + 20 * 60 * 1000;
+
+  if (
+    now.getUTCDay() === reminderDayOfWeek &&
+    now.getTime() >= targetMinuteMs &&
+    now.getTime() <= windowEndMs
+  ) {
     await sendToEligibleUsers("thursday_noon", (user) => {
       const userName = user.alias ?? user.name ?? user.email;
       return thursdayTemplate({
