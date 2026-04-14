@@ -8,6 +8,9 @@ interface WeekPoint {
   weeklyRank: number | null;
   seasonRank: number | null;
   totalPlayers: number;
+  weeklyDivisionRank: number | null;
+  seasonDivisionRank: number | null;
+  divisionPlayerCount: number | null;
 }
 
 interface ChartDataPoint {
@@ -202,11 +205,18 @@ function LineChart({
 export function PositionCharts() {
   const [weeks, setWeeks] = useState<WeekPoint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [usesDivisions, setUsesDivisions] = useState(false);
+  const [divisionName, setDivisionName] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"overall" | "division">("overall");
 
   useEffect(() => {
     fetch("/api/leaderboard/history")
       .then((r) => r.json())
-      .then((d) => setWeeks(d.weeks ?? []))
+      .then((d) => {
+        setWeeks(d.weeks ?? []);
+        setUsesDivisions(d.usesDivisions ?? false);
+        setDivisionName(d.divisionName ?? null);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -222,17 +232,20 @@ export function PositionCharts() {
 
   if (weeks.length === 0) return null;
 
+  const isDivision = usesDivisions && viewMode === "division";
   const totalPlayers = weeks[0].totalPlayers;
+  const divisionPlayerCount = weeks[0].divisionPlayerCount ?? totalPlayers;
+  const maxY = isDivision ? divisionPlayerCount : totalPlayers;
 
   const weeklyData: ChartDataPoint[] = weeks.map((w) => ({
     x: w.weekNumber,
-    y: w.weeklyRank,
+    y: isDivision ? w.weeklyDivisionRank : w.weeklyRank,
     label: w.weekLabel,
   }));
 
   const seasonData: ChartDataPoint[] = weeks.map((w) => ({
     x: w.weekNumber,
-    y: w.seasonRank,
+    y: isDivision ? w.seasonDivisionRank : w.seasonRank,
     label: w.weekLabel,
   }));
 
@@ -242,22 +255,57 @@ export function PositionCharts() {
   if (!hasWeekly && !hasSeason) return null;
 
   return (
-    <div className="mt-6 grid grid-cols-2 gap-4">
-      <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
-        <LineChart
-          title="Weekly Position"
-          color="#6366f1"
-          data={weeklyData}
-          maxY={totalPlayers}
-        />
-      </div>
-      <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
-        <LineChart
-          title="Season Position"
-          color="#22c55e"
-          data={seasonData}
-          maxY={totalPlayers}
-        />
+    <div className="mt-6">
+      {/* Overall / My Division toggle */}
+      {usesDivisions && (
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex gap-1 rounded-lg border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-700 dark:bg-zinc-800/50">
+            <button
+              onClick={() => setViewMode("overall")}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                viewMode === "overall"
+                  ? "bg-white shadow-sm text-zinc-900 dark:bg-zinc-700 dark:text-zinc-50"
+                  : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+              }`}
+            >
+              Overall
+            </button>
+            <button
+              onClick={() => setViewMode("division")}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                viewMode === "division"
+                  ? "bg-white shadow-sm text-zinc-900 dark:bg-zinc-700 dark:text-zinc-50"
+                  : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+              }`}
+            >
+              My Division
+            </button>
+          </div>
+          {isDivision && divisionName && (
+            <span className="inline-flex rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-0.5 text-xs text-blue-400">
+              {divisionName} · {divisionPlayerCount} players
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+          <LineChart
+            title="Weekly Position"
+            color="#6366f1"
+            data={weeklyData}
+            maxY={maxY}
+          />
+        </div>
+        <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+          <LineChart
+            title="Season Position"
+            color="#22c55e"
+            data={seasonData}
+            maxY={maxY}
+          />
+        </div>
       </div>
     </div>
   );

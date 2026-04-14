@@ -28,6 +28,8 @@ export async function GET() {
     return NextResponse.json({ weeks: [] });
   }
 
+  const userId = session.user.id;
+
   // Eligible users (same filter as the live leaderboard)
   const eligibleUsers = await prisma.user.findMany({
     where: { disabled: false, showOnLeaderboard: true },
@@ -35,6 +37,58 @@ export async function GET() {
   });
   const totalPlayers = eligibleUsers.length;
   const eligibleIds = new Set(eligibleUsers.map((u) => u.id));
+
+  // Division context — only when the season uses divisions
+  const season = await prisma.season.findUnique({
+    where: { id: currentWeek.seasonId },
+    select: { usesDivisions: true },
+  });
+  let divisionName: string | null = null;
+  let divisionIds: Set<string> = new Set();
+  if (season?.usesDivisions) {
+    const divisions = await prisma.division.findMany({
+      where: { seasonId: currentWeek.seasonId },
+      select: { id: true, name: true, isDefault: true },
+    });
+    const defaultDiv = divisions.find((d) => d.isDefault);
+    const membership = await prisma.userDivision.findUnique({
+      where: { userId_seasonId: { userId, seasonId: currentWeek.seasonId } },
+      select: { divisionId: true },
+    });
+    const userDivId = membership?.divisionId ?? defaultDiv?.id;
+    if (userDivId) {
+      divisionName = divisions.find((d) => d.id === userDivId)?.name ?? null;
+      // All users in the same division (explicit + implicitly-default)
+      const explicitMembers = await prisma.userDivision.findMany({
+        where: { seasonId: currentWeek.seasonId, divisionId: userDivId },
+        select: { userId: true },
+      });
+      const explicitIds = new Set(explicitMembers.map((m) => m.userId));
+      // Users with no explicit assignment fall into the default division
+      const allMemberIds = userDivId === defaultDiv?.id
+        ? [...eligibleUsers.filter((u) => !explicitIds.has(u.id) || explicitIds.has(u.id)).map((u) => {
+            // eligible users either: explicitly in this div, or have no assignment at all
+            return u;
+          })]
+        : eligibleUsers.filter((u) => explicitIds.has(u.id));
+      // Re-compute: default div = everyone without an explicit assignment + those explicitly assigned
+      if (userDivId === defaultDiv?.id) {
+        const allExplicitlyAssigned = await prisma.userDivision.findMany({
+          where: { seasonId: currentWeek.seasonId },
+          select: { userId: true },
+        });
+        const anyDivIds = new Set(allExplicitlyAssigned.map((m) => m.userId));
+        divisionIds = new Set([
+          ...eligibleUsers.filter((u) => !anyDivIds.has(u.id)).map((u) => u.id),
+          ...explicitIds,
+        ]);
+      } else {
+        divisionIds = explicitIds;
+      }
+      // Intersect with eligible
+      divisionIds = new Set([...divisionIds].filter((id) => eligibleIds.has(id)));
+    }
+  }
 
   // All pick sets for confirmed weeks
   const allWeekIds = confirmedWeeks.map((w) => w.id);
@@ -54,11 +108,12 @@ export async function GET() {
     psByWeek.get(ps.weekId)!.push(ps);
   }
 
-  const userId = session.user.id;
-
   // Running cumulative totals per user (for season rank at each week)
   const cumCorrect = new Map<string, number>();
   const cumGraded = new Map<string, number>();
+
+  const usesDivisions = season?.usesDivisions ?? false;
+  const divisionPlayerCount = divisionIds.size > 0 ? divisionIds.size : null;
 
   const result: Array<{
     weekNumber: number;
@@ -66,6 +121,9 @@ export async function GET() {
     weeklyRank: number | null;
     seasonRank: number | null;
     totalPlayers: number;
+    weeklyDivisionRank: number | null;
+    seasonDivisionRank: number | null;
+    divisionPlayerCount: number | null;
   }> = [];
 
   for (const week of confirmedWeeks) {
@@ -117,14 +175,50 @@ export async function GET() {
     const seasonRankIdx = seasonRanked.findIndex((u) => u.userId === userId);
     const seasonRank = seasonRankIdx >= 0 ? seasonRankIdx + 1 : null;
 
+    // ── Division-scoped ranks (only when divisions active) ────────────────────
+    let weeklyDivisionRank: number | null = null;
+    let seasonDivisionRank: number | null = null;
+
+    if (usesDivisions && divisionIds.size > 0) {
+      const divWeekSets = weekSets.filter((ps) => divisionIds.has(ps.userId));
+      const divWeekRanked = divWeekSets
+        .map((ps) => {
+          const graded = ps.picks.filter((p) => p.isCorrect !== null);
+          const correct = graded.filter((p) => p.isCorrect === true).length;
+          const pct = graded.length > 0 ? correct / graded.length : 0;
+          return { userId: ps.userId, correct, pct };
+        })
+        .sort((a, b) =>
+          b.correct !== a.correct ? b.correct - a.correct : b.pct - a.pct
+        );
+      const divWeekIdx = divWeekRanked.findIndex((u) => u.userId === userId);
+      weeklyDivisionRank = divWeekIdx >= 0 ? divWeekIdx + 1 : null;
+
+      const divSeasonRanked = [...divisionIds]
+        .map((uid) => {
+          const correct = cumCorrect.get(uid) ?? 0;
+          const graded = cumGraded.get(uid) ?? 0;
+          const pct = graded > 0 ? correct / graded : 0;
+          return { userId: uid, correct, pct };
+        })
+        .sort((a, b) =>
+          b.correct !== a.correct ? b.correct - a.correct : b.pct - a.pct
+        );
+      const divSeasonIdx = divSeasonRanked.findIndex((u) => u.userId === userId);
+      seasonDivisionRank = divSeasonIdx >= 0 ? divSeasonIdx + 1 : null;
+    }
+
     result.push({
       weekNumber: week.number,
       weekLabel: week.label,
       weeklyRank,
       seasonRank,
       totalPlayers,
+      weeklyDivisionRank,
+      seasonDivisionRank,
+      divisionPlayerCount,
     });
   }
 
-  return NextResponse.json({ weeks: result });
+  return NextResponse.json({ weeks: result, usesDivisions, divisionName });
 }
