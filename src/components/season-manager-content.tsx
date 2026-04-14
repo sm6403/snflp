@@ -480,6 +480,7 @@ function SeasonDetail({
   onNavigate: (view: View) => void;
   onRefresh: () => void;
 }) {
+  const [activeTab, setActiveTab] = useState<"overview" | "custom-rules">("overview");
   const [addingWeek, setAddingWeek] = useState(false);
   const [settingCurrentWeek, setSettingCurrentWeek] = useState<string | null>(null);
   const [settingLock, setSettingLock] = useState<string | null>(null);
@@ -644,6 +645,29 @@ function SeasonDetail({
           </>
         )}
       </div>
+
+      {/* Tab bar */}
+      <div className="flex gap-1 border-b border-zinc-800">
+        {(["overview", "custom-rules"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              activeTab === tab
+                ? "border-indigo-500 text-zinc-100"
+                : "border-transparent text-zinc-500 hover:text-zinc-300"
+            }`}
+          >
+            {tab === "overview" ? "Overview" : "Custom Rules"}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "custom-rules" && (
+        <CustomRulesTab season={season} />
+      )}
+
+      {activeTab === "overview" && <>
 
       {error && (
         <div className="rounded-lg border border-red-700 bg-red-900/20 px-4 py-3">
@@ -925,6 +949,21 @@ function SeasonDetail({
             </div>
           )}
         </div>
+      </div>
+
+      </> /* end overview tab */}
+    </div>
+  );
+}
+
+// ─── Custom Rules Tab ─────────────────────────────────────────────────────────
+
+function CustomRulesTab({ season }: { season: SeasonSummary }) {
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-6 py-8 text-center">
+        <p className="text-sm font-medium text-zinc-400">No custom rules configured for {seasonLabel(season)}.</p>
+        <p className="mt-1 text-xs text-zinc-600">Custom rules will appear here.</p>
       </div>
     </div>
   );
