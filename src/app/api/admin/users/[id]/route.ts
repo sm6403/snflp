@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { verifyAdminSession } from "@/lib/admin-auth";
+import { verifyAdminSession, getAdminName } from "@/lib/admin-auth";
+import { logAdminAction } from "@/lib/admin-log";
 import { NFL_TEAMS } from "@/lib/nfl-teams";
 
 const USER_SELECT = {
@@ -65,6 +66,9 @@ export async function DELETE(
     await tx.user.delete({ where: { id } });
   });
 
+  const adminName = await getAdminName() ?? "unknown";
+  await logAdminAction(adminName, "DELETE_USER", { email: user.email, name: user.name });
+
   return NextResponse.json({ deleted: true });
 }
 
@@ -111,6 +115,12 @@ export async function PATCH(
     data,
     select: USER_SELECT,
   });
+
+  const adminName = await getAdminName() ?? "unknown";
+  // Summarise what changed (omit hashed password from log)
+  const changes = Object.keys(body).filter((k) => k !== "password");
+  if (body.password) changes.push("password");
+  await logAdminAction(adminName, "UPDATE_USER", { email: user.email, changes });
 
   return NextResponse.json({ user });
 }

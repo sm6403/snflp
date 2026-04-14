@@ -23,6 +23,7 @@ interface AdminAccount {
   id: string;
   username: string;
   createdAt: string;
+  lastLoginAt: string | null;
 }
 
 // ─── Admin Accounts section (superadmin only) ────────────────────────────────
@@ -36,6 +37,12 @@ function AdminAccountsSection() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Change password state
+  const [changePwId, setChangePwId] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [changePwSaving, setChangePwSaving] = useState(false);
+  const [changePwError, setChangePwError] = useState<string | null>(null);
+  const [changePwSuccess, setChangePwSuccess] = useState<string | null>(null);
 
   const fetchAdmins = useCallback(async () => {
     const res = await fetch("/api/admin/admins");
@@ -81,6 +88,31 @@ function AdminAccountsSection() {
       fetchAdmins();
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  async function handleChangePassword(adminId: string) {
+    setChangePwSaving(true);
+    setChangePwError(null);
+    setChangePwSuccess(null);
+    try {
+      const res = await fetch(`/api/admin/admins/${adminId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: newPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setChangePwError(data.error ?? `Error ${res.status}`);
+      } else {
+        setChangePwSuccess("Password updated.");
+        setNewPassword("");
+        setTimeout(() => { setChangePwId(null); setChangePwSuccess(null); }, 1500);
+      }
+    } catch {
+      setChangePwError("Network error");
+    } finally {
+      setChangePwSaving(false);
     }
   }
 
@@ -167,26 +199,80 @@ function AdminAccountsSection() {
               <tr>
                 <th className="px-4 py-3 font-medium">Username</th>
                 <th className="px-4 py-3 font-medium">Created</th>
+                <th className="px-4 py-3 font-medium">Last Login</th>
                 <th className="px-4 py-3 font-medium text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800">
               {admins.map((admin) => (
-                <tr key={admin.id} className="text-zinc-300">
-                  <td className="px-4 py-3 font-medium text-zinc-100">{admin.username}</td>
-                  <td className="px-4 py-3 text-zinc-500">
-                    {new Date(admin.createdAt).toLocaleDateString()}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => handleDelete(admin.id)}
-                      disabled={deletingId === admin.id}
-                      className="rounded-md px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-900/20 disabled:opacity-40"
-                    >
-                      {deletingId === admin.id ? "Removing…" : "Remove"}
-                    </button>
-                  </td>
-                </tr>
+                <>
+                  <tr key={admin.id} className="text-zinc-300">
+                    <td className="px-4 py-3 font-medium text-zinc-100">{admin.username}</td>
+                    <td className="px-4 py-3 text-zinc-500">
+                      {new Date(admin.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3 text-zinc-500">
+                      {admin.lastLoginAt
+                        ? new Date(admin.lastLoginAt).toLocaleString()
+                        : "Never"}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => {
+                            setChangePwId(changePwId === admin.id ? null : admin.id);
+                            setNewPassword("");
+                            setChangePwError(null);
+                            setChangePwSuccess(null);
+                          }}
+                          className="rounded-md px-3 py-1 text-xs font-medium text-indigo-400 transition-colors hover:bg-indigo-900/20"
+                        >
+                          Change Password
+                        </button>
+                        <button
+                          onClick={() => handleDelete(admin.id)}
+                          disabled={deletingId === admin.id}
+                          className="rounded-md px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-900/20 disabled:opacity-40"
+                        >
+                          {deletingId === admin.id ? "Removing…" : "Remove"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {changePwId === admin.id && (
+                    <tr key={`${admin.id}-pw`} className="bg-zinc-800/40">
+                      <td colSpan={4} className="px-4 py-3">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="text-xs text-zinc-400">New password for <span className="font-semibold text-zinc-200">{admin.username}</span>:</span>
+                          <input
+                            type="password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            placeholder="Min. 8 characters"
+                            minLength={8}
+                            autoComplete="new-password"
+                            className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+                          />
+                          <button
+                            onClick={() => handleChangePassword(admin.id)}
+                            disabled={changePwSaving || newPassword.length < 8}
+                            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:opacity-40"
+                          >
+                            {changePwSaving ? "Saving…" : "Save"}
+                          </button>
+                          <button
+                            onClick={() => { setChangePwId(null); setNewPassword(""); setChangePwError(null); }}
+                            className="text-sm text-zinc-500 hover:text-zinc-300"
+                          >
+                            Cancel
+                          </button>
+                          {changePwError && <span className="text-xs text-red-400">{changePwError}</span>}
+                          {changePwSuccess && <span className="text-xs text-green-400">{changePwSuccess}</span>}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
               ))}
             </tbody>
           </table>

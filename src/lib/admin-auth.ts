@@ -82,3 +82,44 @@ export async function verifyAdminSession(): Promise<boolean> {
 export async function verifyIsSuperAdmin(): Promise<boolean> {
   return (await getAdminRole()) === "superadmin";
 }
+
+/**
+ * Returns the display name of the current admin session:
+ *   "superadmin" for env-var credentials
+ *   The admin's username for DB admin users
+ *   null if not authenticated
+ */
+export async function getAdminName(): Promise<string | null> {
+  const cookieStore = await cookies();
+  const cookie = cookieStore.get(COOKIE_NAME);
+  if (!cookie?.value) return null;
+
+  const lastDot = cookie.value.lastIndexOf(".");
+  if (lastDot === -1) return null;
+
+  const token = cookie.value.slice(0, lastDot);
+  const signature = cookie.value.slice(lastDot + 1);
+
+  const expected = sign(token);
+  try {
+    const valid = timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    if (!valid) return null;
+  } catch {
+    return null;
+  }
+
+  if (token === "admin:superadmin" || token === "admin:authenticated") {
+    return "superadmin";
+  }
+
+  if (token.startsWith("admin:user:")) {
+    const adminId = token.slice("admin:user:".length);
+    const adminUser = await prisma.adminUser.findUnique({
+      where: { id: adminId },
+      select: { username: true },
+    });
+    return adminUser?.username ?? null;
+  }
+
+  return null;
+}

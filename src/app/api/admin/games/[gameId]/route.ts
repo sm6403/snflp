@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyAdminSession } from "@/lib/admin-auth";
+import { verifyAdminSession, getAdminName } from "@/lib/admin-auth";
+import { logAdminAction } from "@/lib/admin-log";
 
 export async function PATCH(
   request: Request,
@@ -13,12 +14,14 @@ export async function PATCH(
   const { gameId } = await params;
   const body = await request.json() as { winnerId: string | null; isTie?: boolean };
 
-  const game = await prisma.game.findUnique({ where: { id: gameId } });
+  const game = await prisma.game.findUnique({
+    where: { id: gameId },
+    include: { homeTeam: true, awayTeam: true, week: { include: { season: true } } },
+  });
   if (!game) {
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
   }
 
-  // A game is a tie when isTie=true (winnerId must be null)
   const isTie = body.isTie === true;
 
   // If setting a winner, validate it's one of the two teams
@@ -35,6 +38,21 @@ export async function PATCH(
       isTie,
     },
     include: { homeTeam: true, awayTeam: true, winner: true },
+  });
+
+  const adminName = await getAdminName() ?? "unknown";
+  const matchup = `${game.awayTeam.abbreviation} @ ${game.homeTeam.abbreviation}`;
+  const result = isTie
+    ? "TIE"
+    : body.winnerId
+    ? (body.winnerId === game.homeTeamId ? game.homeTeam.abbreviation : game.awayTeam.abbreviation) + " won"
+    : "cleared";
+
+  await logAdminAction(adminName, "SET_GAME_RESULT", {
+    weekLabel: game.week.label,
+    seasonYear: game.week.season.year,
+    game: matchup,
+    result,
   });
 
   return NextResponse.json({ game: updatedGame });

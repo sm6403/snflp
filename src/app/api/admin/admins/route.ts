@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { verifyIsSuperAdmin } from "@/lib/admin-auth";
+import { verifyIsSuperAdmin, getAdminName } from "@/lib/admin-auth";
+import { logAdminAction } from "@/lib/admin-log";
 
 // GET /api/admin/admins — list all DB admin accounts (superadmin only)
 export async function GET() {
@@ -10,7 +11,7 @@ export async function GET() {
   }
 
   const admins = await prisma.adminUser.findMany({
-    select: { id: true, username: true, createdAt: true },
+    select: { id: true, username: true, createdAt: true, lastLoginAt: true },
     orderBy: { createdAt: "asc" },
   });
 
@@ -40,8 +41,11 @@ export async function POST(request: Request) {
   const hashedPassword = await bcrypt.hash(password, 12);
   const admin = await prisma.adminUser.create({
     data: { username: username.trim(), hashedPassword },
-    select: { id: true, username: true, createdAt: true },
+    select: { id: true, username: true, createdAt: true, lastLoginAt: true },
   });
+
+  const caller = await getAdminName();
+  await logAdminAction(caller ?? "superadmin", "CREATE_ADMIN", { username: admin.username });
 
   return NextResponse.json({ admin }, { status: 201 });
 }

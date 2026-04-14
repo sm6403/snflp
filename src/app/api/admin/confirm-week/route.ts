@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyAdminSession } from "@/lib/admin-auth";
+import { verifyAdminSession, getAdminName } from "@/lib/admin-auth";
+import { logAdminAction } from "@/lib/admin-log";
 
 // POST /api/admin/confirm-week
 // Bulk-grades all picks for the week, stamps Week.confirmedAt, and
@@ -192,5 +193,14 @@ export async function POST(request: Request) {
   }
 
   const updatedWeek = await prisma.week.findUnique({ where: { id: weekId } });
+
+  const adminName = await getAdminName() ?? "unknown";
+  await logAdminAction(adminName, "CONFIRM_RESULTS", {
+    weekId,
+    weekLabel: week.label,
+    seasonYear: week.season.id,
+    gradedCount,
+  });
+
   return NextResponse.json({ week: updatedWeek, gradedCount });
 }

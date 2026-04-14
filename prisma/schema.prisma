@@ -139,8 +139,17 @@ model AppSettings {
 }
 
 model AdminUser {
-  id             String   @id @default(cuid())
-  username       String   @unique
+  id             String    @id @default(cuid())
+  username       String    @unique
   hashedPassword String
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
+  lastLoginAt    DateTime?
+}
+
+model AdminAuditLog {
+  id        String   @id @default(cuid())
+  adminName String   // "superadmin" or the admin's username; stored directly so logs survive account deletion
+  action    String   // e.g. "LOCK_WEEK", "EDIT_PICK", "CONFIRM_RESULTS"
+  detail    String   // JSON string with contextual data
+  createdAt DateTime @default(now())
 }

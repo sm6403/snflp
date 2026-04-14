@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { verifyAdminSession } from "@/lib/admin-auth";
+import { verifyAdminSession, getAdminName } from "@/lib/admin-auth";
+import { logAdminAction } from "@/lib/admin-log";
 
 export async function GET() {
   if (!(await verifyAdminSession())) {
@@ -61,6 +62,9 @@ export async function POST(request: Request) {
     select: { id: true, name: true, email: true, disabled: true, lastLoginAt: true, createdAt: true },
   });
 
+  const adminName = await getAdminName() ?? "unknown";
+  await logAdminAction(adminName, "CREATE_USER", { email: user.email, name: user.name });
+
   return NextResponse.json({ user }, { status: 201 });
 }
 
@@ -92,6 +96,9 @@ export async function PATCH(request: Request) {
     data: updates,
     select: { id: true, name: true, email: true, disabled: true, showOnLeaderboard: true, lastLoginAt: true, createdAt: true },
   });
+
+  const adminName2 = await getAdminName() ?? "unknown";
+  await logAdminAction(adminName2, "UPDATE_USER", { email: user.email, changes: updates });
 
   return NextResponse.json({ user });
 }

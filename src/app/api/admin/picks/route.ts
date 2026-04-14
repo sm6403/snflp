@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyAdminSession } from "@/lib/admin-auth";
+import { verifyAdminSession, getAdminName } from "@/lib/admin-auth";
+import { logAdminAction } from "@/lib/admin-log";
 import { getCurrentWeek } from "@/lib/nfl-data";
 
 export async function GET(request: Request) {
@@ -101,10 +102,18 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "weekId required" }, { status: 400 });
   }
 
+  const adminName = await getAdminName() ?? "unknown";
+
   if (body.action === "lockWeek") {
     const week = await prisma.week.update({
       where: { id: body.weekId },
       data: { lockedForSubmission: true },
+      include: { season: true },
+    });
+    await logAdminAction(adminName, "LOCK_WEEK", {
+      weekId: week.id,
+      weekLabel: week.label,
+      seasonYear: week.season.year,
     });
     return NextResponse.json({ week });
   }
@@ -114,6 +123,12 @@ export async function PATCH(request: Request) {
     const week = await prisma.week.update({
       where: { id: body.weekId },
       data: { lockedForSubmission: false, lockAt: null },
+      include: { season: true },
+    });
+    await logAdminAction(adminName, "UNLOCK_WEEK", {
+      weekId: week.id,
+      weekLabel: week.label,
+      seasonYear: week.season.year,
     });
     return NextResponse.json({ week });
   }
@@ -129,6 +144,13 @@ export async function PATCH(request: Request) {
     const week = await prisma.week.update({
       where: { id: body.weekId },
       data: { lockAt: lockAtDate },
+      include: { season: true },
+    });
+    await logAdminAction(adminName, "SET_LOCK_TIME", {
+      weekId: week.id,
+      weekLabel: week.label,
+      seasonYear: week.season.year,
+      lockAt: body.lockAt,
     });
     return NextResponse.json({ week });
   }
@@ -137,6 +159,12 @@ export async function PATCH(request: Request) {
     const week = await prisma.week.update({
       where: { id: body.weekId },
       data: { lockAt: null },
+      include: { season: true },
+    });
+    await logAdminAction(adminName, "CLEAR_LOCK_TIME", {
+      weekId: week.id,
+      weekLabel: week.label,
+      seasonYear: week.season.year,
     });
     return NextResponse.json({ week });
   }
