@@ -8,12 +8,16 @@ interface AppSettings {
   mode: string;
 }
 
+type BulkLockState = "idle" | "locking" | "unlocking";
+
 export function AdminSettingsContent() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [bulkLockState, setBulkLockState] = useState<BulkLockState>("idle");
+  const [bulkLockMsg, setBulkLockMsg] = useState<string | null>(null);
 
   const fetchSettings = useCallback(async () => {
     const res = await fetch("/api/admin/settings");
@@ -58,6 +62,29 @@ export function AdminSettingsContent() {
     const newMode = settings.mode === "live" ? "test" : "live";
     setSettings((s) => s ? { ...s, mode: newMode } : s);
     await patchSettings({ mode: newMode });
+  }
+
+  async function handleBulkFavoriteLock(locked: boolean) {
+    setBulkLockState(locked ? "locking" : "unlocking");
+    setBulkLockMsg(null);
+    try {
+      const res = await fetch("/api/admin/users/bulk-favorite-lock", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locked }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBulkLockMsg(data.error ?? "Failed");
+      } else {
+        setBulkLockMsg(`${locked ? "Locked" : "Unlocked"} favourite team for ${data.updated} user${data.updated !== 1 ? "s" : ""}.`);
+        setTimeout(() => setBulkLockMsg(null), 4000);
+      }
+    } catch {
+      setBulkLockMsg("Network error");
+    } finally {
+      setBulkLockState("idle");
+    }
   }
 
   const isTest = settings?.mode === "test";
@@ -124,6 +151,33 @@ export function AdminSettingsContent() {
                 >
                   Test
                 </span>
+              </div>
+            </div>
+
+            {/* Favourite team bulk lock */}
+            <div className="rounded-lg border border-zinc-800 bg-zinc-800/50 p-6">
+              <h3 className="font-medium text-zinc-100">Favourite Team Picks</h3>
+              <p className="mt-1 text-sm text-zinc-400">
+                Lock or unlock the ability for all users to change their favourite team. Locked users see a 🔒 badge and cannot edit their pick until unlocked.
+              </p>
+              {bulkLockMsg && (
+                <p className="mt-3 text-sm text-green-400">{bulkLockMsg}</p>
+              )}
+              <div className="mt-4 flex gap-3">
+                <button
+                  onClick={() => handleBulkFavoriteLock(true)}
+                  disabled={bulkLockState !== "idle"}
+                  className="rounded-lg bg-amber-600/20 px-4 py-2 text-sm font-medium text-amber-400 transition-colors hover:bg-amber-600/30 disabled:opacity-50"
+                >
+                  {bulkLockState === "locking" ? "Locking..." : "🔒 Lock All"}
+                </button>
+                <button
+                  onClick={() => handleBulkFavoriteLock(false)}
+                  disabled={bulkLockState !== "idle"}
+                  className="rounded-lg bg-zinc-700/50 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-700 disabled:opacity-50"
+                >
+                  {bulkLockState === "unlocking" ? "Unlocking..." : "🔓 Unlock All"}
+                </button>
               </div>
             </div>
 

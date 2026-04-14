@@ -9,16 +9,42 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { team } = await request.json();
+  const body = await request.json();
 
-  if (!team || !NFL_TEAMS.includes(team)) {
-    return NextResponse.json({ error: "Invalid team" }, { status: 400 });
+  // Toggle the user's own lock state
+  if (typeof body.locked === "boolean") {
+    const user = await prisma.user.update({
+      where: { id: session.user.id },
+      data: { favoriteTeamLocked: body.locked },
+      select: { favoriteTeam: true, favoriteTeamLocked: true },
+    });
+    return NextResponse.json(user);
   }
 
-  await prisma.user.update({
-    where: { id: session.user.id },
-    data: { favoriteTeam: team },
-  });
+  // Change team — blocked when locked
+  if (body.team !== undefined) {
+    if (!NFL_TEAMS.includes(body.team)) {
+      return NextResponse.json({ error: "Invalid team" }, { status: 400 });
+    }
 
-  return NextResponse.json({ team });
+    const current = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { favoriteTeamLocked: true },
+    });
+    if (current?.favoriteTeamLocked) {
+      return NextResponse.json(
+        { error: "Your favourite team pick is locked. Unlock it first to make changes." },
+        { status: 403 }
+      );
+    }
+
+    const user = await prisma.user.update({
+      where: { id: session.user.id },
+      data: { favoriteTeam: body.team },
+      select: { favoriteTeam: true, favoriteTeamLocked: true },
+    });
+    return NextResponse.json(user);
+  }
+
+  return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
 }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { AdminLogoutButton } from "./admin-logout-button";
+import { NFL_TEAMS, getTeamLogoUrl } from "@/lib/nfl-teams";
 
 interface User {
   id: string;
@@ -10,6 +11,7 @@ interface User {
   email: string;
   alias: string | null;
   favoriteTeam: string;
+  favoriteTeamLocked: boolean;
   disabled: boolean;
   lastLoginAt: string | null;
   createdAt: string;
@@ -175,6 +177,16 @@ export function AdminManageUser({ userId }: { userId: string }) {
             onSubmit={(name) => handleUpdate("name", name)}
           />
         </Section>
+
+        {/* Favourite Team */}
+        <Section title="Favourite Team">
+          <FavoriteTeamForm
+            currentTeam={user.favoriteTeam}
+            locked={user.favoriteTeamLocked}
+            onChangeTeam={(team) => handleUpdate("favoriteTeam", team)}
+            onToggleLock={() => handleUpdate("favoriteTeamLocked", !user.favoriteTeamLocked)}
+          />
+        </Section>
       </main>
     </div>
   );
@@ -276,6 +288,89 @@ function NameForm({
       >
         Save Name
       </button>
+    </div>
+  );
+}
+
+function FavoriteTeamForm({
+  currentTeam,
+  locked,
+  onChangeTeam,
+  onToggleLock,
+}: {
+  currentTeam: string;
+  locked: boolean;
+  onChangeTeam: (team: string) => void;
+  onToggleLock: () => void;
+}) {
+  const [selected, setSelected] = useState(currentTeam);
+
+  // Keep local select in sync when the parent value changes after a save
+  if (selected !== currentTeam) {
+    setSelected(currentTeam);
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Current team display */}
+      <div className="flex items-center gap-3">
+        <img
+          src={getTeamLogoUrl(currentTeam)}
+          alt={currentTeam}
+          className="h-10 w-10 object-contain"
+        />
+        <div className="flex-1">
+          <p className="font-medium text-zinc-100">{currentTeam}</p>
+        </div>
+        {locked ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-400">
+            🔒 Locked
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 rounded-full bg-zinc-700/50 px-2.5 py-0.5 text-xs font-semibold text-zinc-400">
+            🔓 Unlocked
+          </span>
+        )}
+      </div>
+
+      {/* Change team */}
+      <div className="flex gap-3">
+        <select
+          value={selected}
+          onChange={(e) => setSelected(e.target.value)}
+          className="flex-1 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-50 focus:border-zinc-500 focus:outline-none"
+        >
+          {NFL_TEAMS.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+        <button
+          onClick={() => onChangeTeam(selected)}
+          disabled={selected === currentTeam}
+          className="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-40"
+        >
+          Save Team
+        </button>
+      </div>
+
+      {/* Lock toggle */}
+      <div className="flex items-center justify-between rounded-md border border-zinc-700/50 bg-zinc-800/50 px-4 py-3">
+        <p className="text-sm text-zinc-400">
+          {locked
+            ? "User cannot change their favourite team."
+            : "User can change their favourite team."}
+        </p>
+        <button
+          onClick={onToggleLock}
+          className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
+            locked
+              ? "bg-zinc-700/50 text-zinc-300 hover:bg-zinc-700"
+              : "bg-amber-600/20 text-amber-400 hover:bg-amber-600/30"
+          }`}
+        >
+          {locked ? "🔓 Unlock" : "🔒 Lock"}
+        </button>
+      </div>
     </div>
   );
 }

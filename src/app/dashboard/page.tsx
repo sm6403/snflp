@@ -20,7 +20,7 @@ export default async function DashboardPage() {
   const [user, currentWeek] = await Promise.all([
     prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { favoriteTeam: true, alias: true },
+      select: { favoriteTeam: true, favoriteTeamLocked: true, alias: true },
     }),
     getCurrentWeek(),
   ]);
@@ -288,7 +288,10 @@ export default async function DashboardPage() {
         )}
 
         <AliasEditor initialAlias={user?.alias ?? ""} />
-        <FavoriteTeamPicker initialTeam={user?.favoriteTeam ?? "Los Angeles Rams"} />
+        <FavoriteTeamPicker
+          initialTeam={user?.favoriteTeam ?? "Los Angeles Rams"}
+          initialLocked={user?.favoriteTeamLocked ?? false}
+        />
         <WeekHistory />
       </main>
     </div>

@@ -12,8 +12,9 @@ model User {
   email             String    @unique
   hashedPassword    String
   alias             String?
-  favoriteTeam      String    @default("Los Angeles Rams")
-  disabled          Boolean   @default(true)
+  favoriteTeam       String   @default("Los Angeles Rams")
+  favoriteTeamLocked Boolean  @default(false)
+  disabled           Boolean  @default(true)
   showOnLeaderboard Boolean   @default(true)
   lastLoginAt       DateTime?
   createdAt         DateTime  @default(now())
