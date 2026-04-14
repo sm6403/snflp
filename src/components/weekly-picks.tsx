@@ -64,9 +64,9 @@ interface LmsTeam {
 }
 
 interface LmsPreviousPick {
-  teamId: string;
+  teamId: string | null;
   week: { number: number; label: string };
-  team: { abbreviation: string; espnId: string };
+  team: { abbreviation: string; espnId: string } | null;
 }
 
 function recordLabel(records: TeamRecord[]): string {
@@ -406,8 +406,12 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
       body: JSON.stringify({ picks, ...(ruleLMS && lmsTeamId ? { lmsTeamId } : {}) }),
     });
     if (!res.ok) {
-      const data = await res.json();
-      setError(data.error ?? "Failed to submit picks");
+      try {
+        const data = await res.json();
+        setError(data.error ?? "Failed to submit picks");
+      } catch {
+        setError("Failed to submit picks. Please try again.");
+      }
     } else {
       await fetchData();
     }
@@ -781,21 +785,21 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
                 : "Pick one team to win this week. You cannot reuse a team from a previous week. Teams on a BYE are not available."}
             </p>
 
-            {/* Previously used teams */}
-            {lmsPreviousPicks.length > 0 && (
+            {/* Previously used teams (only those with an actual pick) */}
+            {lmsPreviousPicks.filter((p) => p.team).length > 0 && (
               <div className="mb-3 flex flex-wrap items-center gap-1.5">
-                {lmsPreviousPicks.map((p) => (
+                {lmsPreviousPicks.filter((p) => p.team).map((p) => (
                   <div
                     key={p.teamId}
                     className="flex flex-col items-center gap-0.5 opacity-30"
-                    title={`Wk ${p.week.number}: ${p.team.abbreviation}`}
+                    title={`Wk ${p.week.number}: ${p.team!.abbreviation}`}
                   >
                     <img
-                      src={`https://a.espncdn.com/i/teamlogos/nfl/500/${p.team.espnId}.png`}
-                      alt={p.team.abbreviation}
+                      src={`https://a.espncdn.com/i/teamlogos/nfl/500/${p.team!.espnId}.png`}
+                      alt={p.team!.abbreviation}
                       className="h-7 w-7 object-contain grayscale"
                     />
-                    <span className="text-[9px] text-zinc-600">{p.team.abbreviation}</span>
+                    <span className="text-[9px] text-zinc-600">{p.team!.abbreviation}</span>
                   </div>
                 ))}
                 <span className="ml-1 self-center text-[10px] text-zinc-600">already used</span>

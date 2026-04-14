@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "LmsPick" ADD COLUMN     "lmsRound" INTEGER NOT NULL DEFAULT 1;
+
+-- AlterTable
+ALTER TABLE "Season" ADD COLUMN     "ruleLMSRound" INTEGER NOT NULL DEFAULT 1;

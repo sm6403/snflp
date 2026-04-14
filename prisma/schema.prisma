@@ -32,6 +32,7 @@ model Season {
   timedAutolocking           Boolean  @default(false)
   ruleFavouriteTeamBonusWin  Boolean  @default(false)
   ruleLMS                    Boolean  @default(false)
+  ruleLMSRound               Int      @default(1)
   parentSeasonId   String?
   parentSeason     Season?  @relation("PostSeason", fields: [parentSeasonId], references: [id])
   childSeasons     Season[] @relation("PostSeason")
@@ -157,7 +158,8 @@ model LmsPick {
   userId     String
   weekId     String
   seasonId   String
-  teamId     String
+  teamId     String?  // null = no pick submitted (auto-eliminated)
+  lmsRound   Int      @default(1)
   eliminated Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -165,7 +167,7 @@ model LmsPick {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   week   Week   @relation(fields: [weekId], references: [id], onDelete: Cascade)
   season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
-  team   Team   @relation(fields: [teamId], references: [id])
+  team   Team?  @relation(fields: [teamId], references: [id])
 
   @@unique([userId, weekId])
 }

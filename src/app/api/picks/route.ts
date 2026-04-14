@@ -56,11 +56,12 @@ export async function GET(request: Request) {
   // Determine season-level flags
   const season = await prisma.season.findUnique({
     where: { id: week.seasonId },
-    select: { timedAutolocking: true, ruleFavouriteTeamBonusWin: true, ruleLMS: true },
+    select: { timedAutolocking: true, ruleFavouriteTeamBonusWin: true, ruleLMS: true, ruleLMSRound: true },
   });
   const timedAutolocking = season?.timedAutolocking ?? false;
   const ruleFavouriteTeamBonusWin = season?.ruleFavouriteTeamBonusWin ?? false;
   const ruleLMS = season?.ruleLMS ?? false;
+  const ruleLMSRound = season?.ruleLMSRound ?? 1;
 
   // Compute per-game isTimeLocked: locked when gameTime ≤ 1 min from now
   const now = new Date();
@@ -111,9 +112,9 @@ export async function GET(request: Request) {
   }
 
   // ── LMS data (only when rule is enabled) ────────────────────────────────────
-  let lmsPick: { teamId: string; eliminated: boolean; team: { id: string; name: string; abbreviation: string; espnId: string } } | null = null;
+  let lmsPick: { teamId: string | null; eliminated: boolean; team: { id: string; name: string; abbreviation: string; espnId: string } | null } | null = null;
   let lmsPreviousTeamIds: string[] = [];
-  let lmsPreviousPicks: { teamId: string; week: { number: number; label: string }; team: { abbreviation: string; espnId: string } }[] = [];
+  let lmsPreviousPicks: { teamId: string | null; week: { number: number; label: string }; team: { abbreviation: string; espnId: string } | null }[] = [];
   let lmsByeTeamIds: string[] = [];
   let allTeams: { id: string; name: string; abbreviation: string; espnId: string }[] = [];
 
@@ -137,7 +138,7 @@ export async function GET(request: Request) {
       orderBy: { week: { number: "asc" } },
       select: { teamId: true, week: { select: { number: true, label: true } }, team: { select: { abbreviation: true, espnId: true } } },
     });
-    lmsPreviousTeamIds = lmsPreviousPicks.map((p) => p.teamId);
+    lmsPreviousTeamIds = lmsPreviousPicks.map((p) => p.teamId).filter((id): id is string => id !== null);
   }
   // ────────────────────────────────────────────────────────────────────────────
 
@@ -211,6 +212,7 @@ export async function GET(request: Request) {
     lmsByeTeamIds,
     allTeams: ruleLMS ? allTeams : undefined,
     teamForm,
+    ruleLMSRound,
   });
 }
 
@@ -253,10 +255,11 @@ export async function POST(request: Request) {
   // Fetch season flags
   const weekSeason = await prisma.season.findUnique({
     where: { id: week.seasonId },
-    select: { timedAutolocking: true, ruleLMS: true },
+    select: { timedAutolocking: true, ruleLMS: true, ruleLMSRound: true },
   });
   const timedAutolock = weekSeason?.timedAutolocking ?? false;
   const postRuleLMS = weekSeason?.ruleLMS ?? false;
+  const currentLMSRound = weekSeason?.ruleLMSRound ?? 1;
 
   // Validate: one pick per game, and picked team must be in that game
   const games = await getGamesForWeek(week.id);
@@ -312,7 +315,9 @@ export async function POST(request: Request) {
   const userId = session.user.id;
   const weekId = week.id;
 
-  const pickSet = await prisma.$transaction(async (tx) => {
+  let pickSet;
+  try {
+  pickSet = await prisma.$transaction(async (tx) => {
     const ps = await tx.pickSet.upsert({
       where: { userId_weekId: { userId, weekId } },
       create: { userId, weekId, submittedAt: postNow, lockedAt: postNow, lockedBy: "user" },
@@ -357,6 +362,10 @@ export async function POST(request: Request) {
 
     return ps;
   });
+  } catch (err) {
+    console.error("[picks POST] Transaction failed:", err);
+    return NextResponse.json({ error: "Failed to save picks. Please try again." }, { status: 500 });
+  }
 
   // ── Save LMS pick ────────────────────────────────────────────────────────────
   if (lmsTeamId && postRuleLMS) {
@@ -386,7 +395,7 @@ export async function POST(request: Request) {
 
     await prisma.lmsPick.upsert({
       where: { userId_weekId: { userId, weekId: week.id } },
-      create: { userId, weekId: week.id, seasonId: week.seasonId, teamId: lmsTeamId },
+      create: { userId, weekId: week.id, seasonId: week.seasonId, teamId: lmsTeamId, lmsRound: currentLMSRound },
       update: { teamId: lmsTeamId, eliminated: false },
     });
   }
