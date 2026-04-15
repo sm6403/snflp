@@ -110,6 +110,18 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
 
+  // Verify the target user belongs to the admin's league (not applicable to superadmin)
+  const patchSession = await getAdminSession();
+  const patchLeagueId = await getAdminLeagueId(patchSession);
+  if (patchLeagueId) {
+    const membership = await prisma.userLeague.findUnique({
+      where: { userId_leagueId: { userId: body.userId, leagueId: patchLeagueId } },
+    });
+    if (!membership) {
+      return NextResponse.json({ error: "User not found in your league" }, { status: 403 });
+    }
+  }
+
   const user = await prisma.user.update({
     where: { id: body.userId },
     data: updates,
