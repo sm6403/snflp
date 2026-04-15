@@ -47,53 +47,62 @@ async function releaseLock() {
 }
 
 /**
- * Finds any migrations marked as failed in _prisma_migrations and resolves
- * them as rolled-back so prisma migrate deploy can re-apply them.
+ * Finds any migrations marked as failed in _prisma_migrations and marks them
+ * as rolled-back DIRECTLY via SQL (equivalent to `prisma migrate resolve
+ * --rolled-back` but bypasses Prisma CLI subprocess issues).
  *
- * Prisma v7 marks a failed migration with: finished_at IS NOT NULL,
- * applied_steps_count = 0, rolled_back_at IS NULL. Note: `logs` may be NULL
- * even on failure in Prisma v7, so we do NOT filter on logs.
+ * Prisma considers a migration "failed" (P3009) when:
+ *   finished_at IS NOT NULL AND rolled_back_at IS NULL AND applied_steps_count = 0
  *
- * The migration SQL is written idempotently (IF NOT EXISTS guards), so it is
- * safe to re-apply even if a previous attempt partially committed DDL through
- * Neon's connection pooler.
+ * Setting rolled_back_at unblocks `migrate deploy` so it can re-apply the
+ * migration with the corrected (idempotent) SQL.
  */
 async function resolveFailedMigrations() {
   const client = new pg.Client({ connectionString: connStr });
   try {
     await client.connect();
+    console.log("[migrate] Checking for failed migrations…");
 
     // Check that the migrations table exists (it won't on a brand-new DB)
     const tableCheck = await client.query(
       `SELECT 1 FROM information_schema.tables
        WHERE table_schema = 'public' AND table_name = '_prisma_migrations'`
     );
-    if (tableCheck.rowCount === 0) return;
+    if (tableCheck.rowCount === 0) {
+      console.log("[migrate] _prisma_migrations table not found — skipping.");
+      return;
+    }
 
-    // applied_steps_count = 0 with a finished_at is Prisma's "failed" state
-    const res = await client.query(
-      `SELECT migration_name
+    // Show current state for debugging
+    const allRows = await client.query(
+      `SELECT migration_name, applied_steps_count, finished_at IS NOT NULL as finished,
+              rolled_back_at IS NOT NULL as rolled_back
        FROM _prisma_migrations
+       ORDER BY started_at DESC LIMIT 5`
+    );
+    console.log("[migrate] Recent migrations:", JSON.stringify(allRows.rows));
+
+    // Mark failed migrations as rolled-back directly in the table.
+    // This is exactly what `prisma migrate resolve --rolled-back` does internally.
+    const res = await client.query(
+      `UPDATE _prisma_migrations
+       SET rolled_back_at = NOW()
        WHERE finished_at IS NOT NULL
          AND rolled_back_at IS NULL
-         AND applied_steps_count = 0`
+         AND applied_steps_count = 0
+       RETURNING migration_name`
     );
 
     if (res.rowCount > 0) {
-      console.log(`[migrate] Found ${res.rowCount} failed migration(s) — resolving as rolled-back…`);
-    }
-
-    for (const row of res.rows) {
-      const name = row.migration_name;
-      console.log(`[migrate] Resolving: ${name}`);
-      try {
-        execSync(`npx prisma migrate resolve --rolled-back "${name}"`, { stdio: "inherit" });
-      } catch (err) {
-        console.warn(`[migrate] Could not resolve migration ${name}:`, err.message);
+      console.log(`[migrate] Marked ${res.rowCount} failed migration(s) as rolled-back:`);
+      for (const row of res.rows) {
+        console.log(`  - ${row.migration_name}`);
       }
+    } else {
+      console.log("[migrate] No failed migrations found.");
     }
   } catch (err) {
-    console.warn("[migrate] Could not check for failed migrations:", err.message);
+    console.warn("[migrate] Could not resolve failed migrations:", err.message);
   } finally {
     await client.end();
   }
