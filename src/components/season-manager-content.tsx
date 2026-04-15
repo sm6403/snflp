@@ -1504,15 +1504,27 @@ function DivisionsTab({ seasonId }: { seasonId: string }) {
 
 // ─── View C: Week Schedule Editor ────────────────────────────────────────────
 
+interface EspnGame {
+  homeTeamId: string;
+  awayTeamId: string;
+  gameTime: string | null;
+  homeTeamName: string;
+  awayTeamName: string;
+}
+
 function WeekScheduleEditor({
   weekId,
   seasonId,
   seasonLabel: label,
+  seasonYear,
+  seasonType,
   onBack,
 }: {
   weekId: string;
   seasonId: string;
   seasonLabel: string;
+  seasonYear: number;
+  seasonType: "regular" | "postseason";
   onBack: () => void;
 }) {
   const [week, setWeek] = useState<{ id: string; number: number; label: string; confirmedAt: string | null } | null>(null);
@@ -1526,6 +1538,11 @@ function WeekScheduleEditor({
   const [duplicateTeamIds, setDuplicateTeamIds] = useState<Set<string>>(new Set());
   // Number of rows to add with the bulk-add button
   const [addCount, setAddCount] = useState(1);
+  // ESPN import
+  const [espnPreview, setEspnPreview] = useState<EspnGame[] | null>(null);
+  const [espnLoading, setEspnLoading] = useState(false);
+  const [espnError, setEspnError] = useState<string | null>(null);
+  const [espnUnmapped, setEspnUnmapped] = useState<string[]>([]);
 
   useEffect(() => {
     setLoading(true);
@@ -1668,6 +1685,49 @@ function WeekScheduleEditor({
 
   const isConfirmed = !!week?.confirmedAt;
 
+  async function handleEspnFetch() {
+    if (!week || isConfirmed) return;
+    setEspnLoading(true);
+    setEspnError(null);
+    setEspnPreview(null);
+    setEspnUnmapped([]);
+    const espnSeasonType = seasonType === "postseason" ? "3" : "2";
+    try {
+      const res = await fetch(
+        `/api/admin/espn/schedule?year=${seasonYear}&week=${week.number}&seasontype=${espnSeasonType}`
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        setEspnError(data.error ?? `ESPN fetch failed (${res.status})`);
+        return;
+      }
+      if ((data.games ?? []).length === 0) {
+        setEspnError("ESPN returned no games for this week. The schedule may not be published yet.");
+        return;
+      }
+      setEspnPreview(data.games ?? []);
+      setEspnUnmapped(data.unmappedTeams ?? []);
+    } catch {
+      setEspnError("Network error — could not reach ESPN.");
+    } finally {
+      setEspnLoading(false);
+    }
+  }
+
+  function handleEspnApply() {
+    if (!espnPreview) return;
+    const newRows: GameRow[] = espnPreview.map((g) => ({
+      homeTeamId: g.homeTeamId,
+      awayTeamId: g.awayTeamId,
+      // ESPN returns ISO UTC — convert to datetime-local input value (UTC)
+      gameTime: g.gameTime ? toInputValue(g.gameTime) : "",
+    }));
+    setRows(newRows);
+    setDuplicateTeamIds(computeDuplicates(newRows));
+    setEspnPreview(null);
+    setEspnUnmapped([]);
+  }
+
   // Cursor: the next empty slot when clicking bye-week logos (away before home, top to bottom)
   const cursorSlot: { rowIdx: number; field: "awayTeamId" | "homeTeamId" } | null = (() => {
     if (isConfirmed) return null;
@@ -1689,7 +1749,7 @@ function WeekScheduleEditor({
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={onBack}
           className="text-sm text-zinc-400 transition-colors hover:text-zinc-200"
@@ -1705,6 +1765,15 @@ function WeekScheduleEditor({
             Confirmed — read only
           </span>
         )}
+        {!isConfirmed && week && (
+          <button
+            onClick={handleEspnFetch}
+            disabled={espnLoading}
+            className="ml-auto rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {espnLoading ? "Fetching…" : "⬇ Import from ESPN"}
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -1714,6 +1783,67 @@ function WeekScheduleEditor({
           {error && (
             <div className="rounded-lg border border-red-700 bg-red-900/20 px-4 py-3">
               <p className="text-sm text-red-400">{error}</p>
+            </div>
+          )}
+
+          {/* ESPN import error */}
+          {espnError && (
+            <div className="rounded-lg border border-amber-700 bg-amber-900/20 px-4 py-3">
+              <p className="text-sm text-amber-400">{espnError}</p>
+            </div>
+          )}
+
+          {/* ESPN preview panel */}
+          {espnPreview && (
+            <div className="rounded-lg border border-indigo-700/60 bg-indigo-950/30 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-indigo-300">
+                  ESPN preview — {espnPreview.length} game{espnPreview.length !== 1 ? "s" : ""}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleEspnApply}
+                    className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-500"
+                  >
+                    Apply to Schedule
+                  </button>
+                  <button
+                    onClick={() => { setEspnPreview(null); setEspnUnmapped([]); setEspnError(null); }}
+                    className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800"
+                  >
+                    Discard
+                  </button>
+                </div>
+              </div>
+              {espnUnmapped.length > 0 && (
+                <p className="text-xs text-amber-400">
+                  ⚠ Unrecognised team abbreviations (not imported): {espnUnmapped.join(", ")}
+                </p>
+              )}
+              <div className="space-y-1">
+                {espnPreview.map((g, i) => {
+                  const d = g.gameTime ? new Date(g.gameTime) : null;
+                  const timeStr = d
+                    ? d.toLocaleString("en-US", {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                        timeZone: "UTC",
+                        timeZoneName: "short",
+                      })
+                    : "TBD";
+                  return (
+                    <div key={i} className="flex items-center gap-2 rounded-md bg-zinc-900/60 px-3 py-1.5 text-sm">
+                      <span className="text-zinc-300">{g.awayTeamName}</span>
+                      <span className="text-zinc-600 font-bold">@</span>
+                      <span className="text-zinc-300">{g.homeTeamName}</span>
+                      <span className="ml-auto text-xs text-zinc-500">{timeStr}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -1958,6 +2088,8 @@ export function SeasonManagerContent() {
             weekId={view.weekId}
             seasonId={view.seasonId}
             seasonLabel={currentSeason ? seasonLabel(currentSeason) : "Season"}
+            seasonYear={currentSeason?.year ?? new Date().getFullYear()}
+            seasonType={currentSeason?.type ?? "regular"}
             onBack={() => setView({ type: "season", seasonId: view.seasonId })}
           />
         ) : (
