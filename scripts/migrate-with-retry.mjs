@@ -50,10 +50,13 @@ async function releaseLock() {
  * Finds any migrations marked as failed in _prisma_migrations and resolves
  * them as rolled-back so prisma migrate deploy can re-apply them.
  *
- * A failed migration row has: finished_at IS NOT NULL, rolled_back_at IS NULL,
- * and logs IS NOT NULL (contains the error). Because Prisma wraps each
- * migration in a transaction, a failure means zero DB changes were committed,
- * so rolling back and re-running is always safe.
+ * Prisma v7 marks a failed migration with: finished_at IS NOT NULL,
+ * applied_steps_count = 0, rolled_back_at IS NULL. Note: `logs` may be NULL
+ * even on failure in Prisma v7, so we do NOT filter on logs.
+ *
+ * The migration SQL is written idempotently (IF NOT EXISTS guards), so it is
+ * safe to re-apply even if a previous attempt partially committed DDL through
+ * Neon's connection pooler.
  */
 async function resolveFailedMigrations() {
   const client = new pg.Client({ connectionString: connStr });
@@ -67,23 +70,24 @@ async function resolveFailedMigrations() {
     );
     if (tableCheck.rowCount === 0) return;
 
+    // applied_steps_count = 0 with a finished_at is Prisma's "failed" state
     const res = await client.query(
       `SELECT migration_name
        FROM _prisma_migrations
        WHERE finished_at IS NOT NULL
          AND rolled_back_at IS NULL
-         AND logs IS NOT NULL`
+         AND applied_steps_count = 0`
     );
+
+    if (res.rowCount > 0) {
+      console.log(`[migrate] Found ${res.rowCount} failed migration(s) — resolving as rolled-back…`);
+    }
 
     for (const row of res.rows) {
       const name = row.migration_name;
-      console.log(`[migrate] Resolving failed migration as rolled-back: ${name}`);
+      console.log(`[migrate] Resolving: ${name}`);
       try {
-        execFileSync(
-          "npx",
-          ["prisma", "migrate", "resolve", "--rolled-back", name],
-          { stdio: "inherit" }
-        );
+        execSync(`npx prisma migrate resolve --rolled-back "${name}"`, { stdio: "inherit" });
       } catch (err) {
         console.warn(`[migrate] Could not resolve migration ${name}:`, err.message);
       }
