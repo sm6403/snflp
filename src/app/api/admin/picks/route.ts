@@ -39,7 +39,7 @@ export async function GET(request: Request) {
     prisma.pickSet.findMany({
       where: { weekId: week.id },
       include: {
-        user: { select: { id: true, name: true, email: true, alias: true } },
+        user: { select: { id: true, name: true, email: true, alias: true, favoriteTeam: true } },
         picks: {
           include: {
             pickedTeam: true,
@@ -51,7 +51,7 @@ export async function GET(request: Request) {
     }),
     prisma.user.findMany({
       where: { showOnLeaderboard: true },
-      select: { id: true, name: true, email: true, alias: true },
+      select: { id: true, name: true, email: true, alias: true, favoriteTeam: true },
       orderBy: { alias: "asc" },
     }),
   ]);
@@ -87,17 +87,25 @@ export async function GET(request: Request) {
   // LMS picks for this week (only when ruleLMS is enabled)
   const ruleLMS = week.season.ruleLMS ?? false;
   const lmsPicksByUserId: Record<string, { teamId: string | null; eliminated: boolean; team: { id: string; name: string; abbreviation: string; espnId: string } | null }> = {};
+  let lmsTeams: { id: string; name: string; abbreviation: string; espnId: string }[] = [];
   if (ruleLMS) {
-    const lmsPicks = await prisma.lmsPick.findMany({
-      where: { weekId: week.id },
-      select: { userId: true, teamId: true, eliminated: true, team: { select: { id: true, name: true, abbreviation: true, espnId: true } } },
-    });
+    const [lmsPicks, allTeams] = await Promise.all([
+      prisma.lmsPick.findMany({
+        where: { weekId: week.id },
+        select: { userId: true, teamId: true, eliminated: true, team: { select: { id: true, name: true, abbreviation: true, espnId: true } } },
+      }),
+      prisma.team.findMany({
+        select: { id: true, name: true, abbreviation: true, espnId: true },
+        orderBy: { name: "asc" },
+      }),
+    ]);
     for (const p of lmsPicks) {
       lmsPicksByUserId[p.userId] = { teamId: p.teamId, eliminated: p.eliminated, team: p.team };
     }
+    lmsTeams = allTeams;
   }
 
-  return NextResponse.json({ week, pickSets, weeks, games, ruleLMS, lmsPicksByUserId });
+  return NextResponse.json({ week, pickSets, weeks, games, ruleLMS, lmsPicksByUserId, lmsTeams });
 }
 
 export async function PATCH(request: Request) {
@@ -183,4 +191,109 @@ export async function PATCH(request: Request) {
   }
 
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+}
+
+// ─── Submit picks on behalf of a user ────────────────────────────────────────
+
+export async function POST(request: Request) {
+  if (!(await verifyAdminSession())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await request.json() as {
+    userId: string;
+    weekId: string;
+    picks: Array<{ gameId: string; pickedTeamId: string }>;
+    lmsTeamId?: string;
+  };
+
+  const { userId, weekId, picks, lmsTeamId } = body;
+
+  if (!userId || !weekId || !Array.isArray(picks) || picks.length === 0) {
+    return NextResponse.json({ error: "userId, weekId and picks required" }, { status: 400 });
+  }
+
+  const [user, week] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, alias: true, email: true },
+    }),
+    prisma.week.findUnique({
+      where: { id: weekId },
+      include: { season: true },
+    }),
+  ]);
+
+  if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  if (!week) return NextResponse.json({ error: "Week not found" }, { status: 404 });
+
+  const existing = await prisma.pickSet.findUnique({
+    where: { userId_weekId: { userId, weekId } },
+  });
+  if (existing) {
+    return NextResponse.json({ error: "User already has picks for this week" }, { status: 409 });
+  }
+
+  // Validate each pick references a game in this week with a valid team
+  const games = await prisma.game.findMany({
+    where: { weekId },
+    select: { id: true, homeTeamId: true, awayTeamId: true },
+  });
+  const gameMap = new Map(games.map((g) => [g.id, g]));
+
+  for (const pick of picks) {
+    const game = gameMap.get(pick.gameId);
+    if (!game) {
+      return NextResponse.json({ error: `Game not found: ${pick.gameId}` }, { status: 400 });
+    }
+    if (pick.pickedTeamId !== game.homeTeamId && pick.pickedTeamId !== game.awayTeamId) {
+      return NextResponse.json({ error: `Invalid team for game ${pick.gameId}` }, { status: 400 });
+    }
+  }
+
+  const now = new Date();
+  const adminName = (await getAdminName()) ?? "unknown";
+  const userLabel = user.alias ?? user.name ?? user.email;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.pickSet.create({
+      data: {
+        userId,
+        weekId,
+        submittedAt: now,
+        lockedAt: now,
+        lockedBy: "admin",
+        picks: {
+          create: picks.map((p) => ({
+            gameId: p.gameId,
+            pickedTeamId: p.pickedTeamId,
+            editedBy: "admin",
+          })),
+        },
+      },
+    });
+
+    if (lmsTeamId && week.season.ruleLMS) {
+      await tx.lmsPick.upsert({
+        where: { userId_weekId: { userId, weekId } },
+        create: {
+          userId,
+          weekId,
+          seasonId: week.seasonId,
+          teamId: lmsTeamId,
+          lmsRound: week.season.ruleLMSRound ?? 1,
+        },
+        update: { teamId: lmsTeamId },
+      });
+    }
+  });
+
+  await logAdminAction(adminName, "ADMIN_SUBMIT_PICKS", {
+    user: userLabel,
+    weekLabel: week.label,
+    seasonYear: week.season.year,
+    pickCount: picks.length,
+  });
+
+  return NextResponse.json({ ok: true });
 }

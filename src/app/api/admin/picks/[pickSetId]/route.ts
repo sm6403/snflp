@@ -13,9 +13,11 @@ export async function PATCH(
 
   const { pickSetId } = await params;
   const body = await request.json() as {
-    action: "unlock" | "lock" | "editPick";
+    action: "unlock" | "lock" | "editPick" | "replaceAllPicks" | "editLmsPick";
     pickId?: string;
     pickedTeamId?: string;
+    picks?: Array<{ gameId: string; pickedTeamId: string }>;
+    teamId?: string | null;
   };
 
   const pickSet = await prisma.pickSet.findUnique({
@@ -91,6 +93,90 @@ export async function PATCH(
     });
 
     return NextResponse.json({ pick: updated });
+  }
+
+  if (body.action === "replaceAllPicks") {
+    if (!Array.isArray(body.picks) || body.picks.length === 0) {
+      return NextResponse.json({ error: "picks required" }, { status: 400 });
+    }
+
+    // Validate all picks reference games in this week
+    const games = await prisma.game.findMany({
+      where: { weekId: pickSet.weekId },
+      select: { id: true, homeTeamId: true, awayTeamId: true },
+    });
+    const gameMap = new Map(games.map((g) => [g.id, g]));
+
+    for (const pick of body.picks) {
+      const game = gameMap.get(pick.gameId);
+      if (!game) {
+        return NextResponse.json({ error: `Game not found: ${pick.gameId}` }, { status: 400 });
+      }
+      if (pick.pickedTeamId !== game.homeTeamId && pick.pickedTeamId !== game.awayTeamId) {
+        return NextResponse.json({ error: `Invalid team for game ${pick.gameId}` }, { status: 400 });
+      }
+    }
+
+    const now = new Date();
+    await prisma.$transaction([
+      // Upsert every pick
+      ...body.picks.map((p) =>
+        prisma.pick.upsert({
+          where: { pickSetId_gameId: { pickSetId, gameId: p.gameId } },
+          create: { pickSetId, gameId: p.gameId, pickedTeamId: p.pickedTeamId, editedBy: "admin" },
+          update: { pickedTeamId: p.pickedTeamId, editedBy: "admin" },
+        })
+      ),
+      // Ensure the pick set is stamped as submitted + locked by admin
+      prisma.pickSet.update({
+        where: { id: pickSetId },
+        data: {
+          submittedAt: pickSet.submittedAt ?? now,
+          lockedAt: now,
+          lockedBy: "admin",
+        },
+      }),
+    ]);
+
+    await logAdminAction(adminName, "REPLACE_ALL_PICKS", {
+      user: userLabel,
+      weekLabel,
+      seasonYear,
+      pickCount: body.picks.length,
+    });
+
+    return NextResponse.json({ ok: true });
+  }
+
+  if (body.action === "editLmsPick") {
+    const existing = await prisma.lmsPick.findUnique({
+      where: { userId_weekId: { userId: pickSet.userId, weekId: pickSet.weekId } },
+    });
+
+    if (existing) {
+      await prisma.lmsPick.update({
+        where: { userId_weekId: { userId: pickSet.userId, weekId: pickSet.weekId } },
+        data: { teamId: body.teamId ?? null },
+      });
+    } else {
+      const week = await prisma.week.findUnique({
+        where: { id: pickSet.weekId },
+        include: { season: true },
+      });
+      if (!week) return NextResponse.json({ error: "Week not found" }, { status: 404 });
+      await prisma.lmsPick.create({
+        data: {
+          userId: pickSet.userId,
+          weekId: pickSet.weekId,
+          seasonId: week.seasonId,
+          teamId: body.teamId ?? null,
+          lmsRound: week.season.ruleLMSRound ?? 1,
+        },
+      });
+    }
+
+    await logAdminAction(adminName, "EDIT_LMS_PICK", { user: userLabel, weekLabel, seasonYear });
+    return NextResponse.json({ ok: true });
   }
 
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
