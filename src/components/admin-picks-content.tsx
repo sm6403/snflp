@@ -603,6 +603,10 @@ function ConfirmResults({
   const [advanceToNext, setAdvanceToNext] = useState(false);
   // Keep a local copy so setting a winner updates in-place without re-ordering
   const [games, setGames] = useState<Game[]>(initialGames);
+  // ESPN results import
+  const [espnImporting, setEspnImporting] = useState(false);
+  const [espnImportMsg, setEspnImportMsg] = useState<string | null>(null);
+  const [espnImportError, setEspnImportError] = useState<string | null>(null);
 
   // Sync when parent refreshes (e.g. week change), but preserve order
   useEffect(() => {
@@ -677,6 +681,43 @@ function ConfirmResults({
     }
   }
 
+  async function handleEspnResultsImport() {
+    setEspnImporting(true);
+    setEspnImportMsg(null);
+    setEspnImportError(null);
+    try {
+      const res = await fetch(`/api/admin/espn/results?weekId=${weekId}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setEspnImportError(data.error ?? `ESPN fetch failed (${res.status})`);
+        return;
+      }
+      const results: Array<{ gameId: string; winnerId: string | null; isTie: boolean; completed: boolean }> =
+        data.results ?? [];
+      const completed = results.filter((r) => r.completed);
+      if (completed.length === 0) {
+        setEspnImportError("ESPN has no final scores for this week yet.");
+        return;
+      }
+      // Apply each result sequentially using the existing handlers
+      for (const result of completed) {
+        if (result.isTie) {
+          await handleSetTie(result.gameId, false); // false = not currently a tie, so this sets it
+        } else {
+          await handleSetWinner(result.gameId, result.winnerId);
+        }
+      }
+      setEspnImportMsg(
+        `Imported ${completed.length} result${completed.length !== 1 ? "s" : ""} from ESPN.` +
+        (data.unmatchedCount > 0 ? ` (${data.unmatchedCount} game${data.unmatchedCount !== 1 ? "s" : ""} couldn't be matched)` : "")
+      );
+    } catch {
+      setEspnImportError("Network error — could not reach ESPN.");
+    } finally {
+      setEspnImporting(false);
+    }
+  }
+
   const winnersEntered = games.filter((g) => g.winner !== null || g.isTie).length;
   const allGamesHaveWinners = games.length > 0 && winnersEntered === games.length;
 
@@ -703,6 +744,26 @@ function ConfirmResults({
 
       {open && (
         <div className="border-t border-indigo-800/50 px-5 pb-5 pt-4 space-y-3">
+
+          {/* ESPN results import */}
+          {!confirmedAt && (
+            <div className="flex flex-wrap items-center gap-3 pb-1">
+              <button
+                onClick={handleEspnResultsImport}
+                disabled={espnImporting}
+                className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {espnImporting ? "Importing…" : "⬇ Import Results from ESPN"}
+              </button>
+              {espnImportMsg && (
+                <span className="text-sm text-green-400">{espnImportMsg}</span>
+              )}
+              {espnImportError && (
+                <span className="text-sm text-amber-400">{espnImportError}</span>
+              )}
+            </div>
+          )}
+
           {games.map((game) => {
             const isSaving = saving === game.id;
             const awayWon = game.winner?.id === game.awayTeam.id;
