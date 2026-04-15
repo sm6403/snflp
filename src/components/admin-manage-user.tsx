@@ -30,9 +30,16 @@ interface DivisionContext {
   currentDivisionId: string | null;
 }
 
+interface LeagueOption {
+  id: string;
+  name: string;
+}
+
 export function AdminManageUser({ userId }: { userId: string }) {
   const [user, setUser] = useState<User | null>(null);
   const [divisionContext, setDivisionContext] = useState<DivisionContext | null>(null);
+  const [currentLeagues, setCurrentLeagues] = useState<LeagueOption[]>([]);
+  const [allLeagues, setAllLeagues] = useState<LeagueOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -42,12 +49,17 @@ export function AdminManageUser({ userId }: { userId: string }) {
       const data = await res.json();
       setUser(data.user);
       setDivisionContext(data.divisionContext ?? null);
+      setCurrentLeagues(data.currentLeagues ?? []);
     }
     setLoading(false);
   }, [userId]);
 
   useEffect(() => {
     fetchUser();
+    // Fetch all leagues for the move-league selector (superadmin sees all)
+    fetch("/api/admin/leagues")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.leagues) setAllLeagues(d.leagues); });
   }, [fetchUser]);
 
   async function handleUpdate(field: string, value: unknown) {
@@ -204,6 +216,33 @@ export function AdminManageUser({ userId }: { userId: string }) {
             onToggleLock={() => handleUpdate("favoriteTeamLocked", !user.favoriteTeamLocked)}
           />
         </Section>
+
+        {/* League — only shown when 2+ leagues exist (superadmin context) */}
+        {allLeagues.length > 1 && (
+          <Section title="League">
+            <LeagueForm
+              currentLeagues={currentLeagues}
+              allLeagues={allLeagues}
+              onSave={async (leagueId) => {
+                setMessage("");
+                const res = await fetch(`/api/admin/users/${userId}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ leagueId }),
+                });
+                const data = await res.json();
+                if (res.ok) {
+                  const moved = allLeagues.find((l) => l.id === leagueId);
+                  setCurrentLeagues(moved ? [moved] : []);
+                  setMessage("League updated — user has been moved");
+                  setTimeout(() => setMessage(""), 4000);
+                } else {
+                  setMessage(`Error: ${data.error ?? res.status}`);
+                }
+              }}
+            />
+          </Section>
+        )}
 
         {/* Division (only shown when current season uses divisions) */}
         {divisionContext && (
@@ -375,6 +414,56 @@ function DivisionForm({
           Save Division
         </button>
       </div>
+    </div>
+  );
+}
+
+function LeagueForm({
+  currentLeagues,
+  allLeagues,
+  onSave,
+}: {
+  currentLeagues: LeagueOption[];
+  allLeagues: LeagueOption[];
+  onSave: (leagueId: string) => void;
+}) {
+  const currentLeagueId = currentLeagues[0]?.id ?? "";
+  const [selected, setSelected] = useState(currentLeagueId);
+
+  useEffect(() => {
+    setSelected(currentLeagues[0]?.id ?? "");
+  }, [currentLeagues]);
+
+  const currentName = currentLeagues[0]?.name ?? "None";
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-zinc-400">
+        Current league:{" "}
+        <span className="font-medium text-zinc-200">{currentName}</span>
+      </p>
+      <div className="flex gap-3">
+        <select
+          value={selected}
+          onChange={(e) => setSelected(e.target.value)}
+          className="flex-1 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-50 focus:border-zinc-500 focus:outline-none"
+        >
+          <option value="">— select league —</option>
+          {allLeagues.map((l) => (
+            <option key={l.id} value={l.id}>{l.name}</option>
+          ))}
+        </select>
+        <button
+          onClick={() => selected && onSave(selected)}
+          disabled={!selected || selected === currentLeagueId}
+          className="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-40"
+        >
+          Move to League
+        </button>
+      </div>
+      <p className="text-xs text-zinc-500">
+        Moving a user removes them from their current league and adds them to the selected one.
+      </p>
     </div>
   );
 }

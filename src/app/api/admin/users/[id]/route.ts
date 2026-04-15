@@ -43,6 +43,13 @@ export async function GET(
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
+  // Fetch user's current league memberships
+  const userLeagues = await prisma.userLeague.findMany({
+    where: { userId: id },
+    select: { league: { select: { id: true, name: true } } },
+  });
+  const currentLeagues = userLeagues.map((ul) => ul.league);
+
   // Include division context for the current active season (if it uses divisions)
   // Scope to admin's league so we don't leak divisions from other leagues
   const currentSeason = await prisma.season.findFirst({
@@ -74,7 +81,7 @@ export async function GET(
     };
   }
 
-  return NextResponse.json({ user, divisionContext });
+  return NextResponse.json({ user, divisionContext, currentLeagues });
 }
 
 export async function DELETE(
@@ -165,6 +172,29 @@ export async function PATCH(
   }
   if (typeof body.favoriteTeamLocked === "boolean") {
     data.favoriteTeamLocked = body.favoriteTeamLocked;
+  }
+
+  // League move — superadmin only; removes existing league membership and assigns new one
+  if (typeof body.leagueId === "string") {
+    const moveSess = await getAdminSession();
+    if (moveSess?.role !== "superadmin") {
+      return NextResponse.json({ error: "Only superadmins can move users between leagues" }, { status: 403 });
+    }
+    const targetLeague = await prisma.league.findUnique({
+      where: { id: body.leagueId },
+      select: { id: true, name: true },
+    });
+    if (!targetLeague) {
+      return NextResponse.json({ error: "League not found" }, { status: 404 });
+    }
+    await prisma.$transaction(async (tx) => {
+      await tx.userLeague.deleteMany({ where: { userId: id } });
+      await tx.userLeague.create({ data: { userId: id, leagueId: body.leagueId } });
+    });
+    const adminName = await getAdminName() ?? "unknown";
+    await logAdminAction(adminName, "MOVE_USER_LEAGUE", { userId: id, targetLeague: targetLeague.name });
+    const user = await prisma.user.findUnique({ where: { id }, select: USER_SELECT });
+    return NextResponse.json({ user });
   }
 
   // Division assignment — handled separately from the main user update
