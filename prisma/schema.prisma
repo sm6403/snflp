@@ -61,6 +61,11 @@ model LeagueSettings {
   reminderMinuteUtc       Int     @default(0)
   reminderOnlyUnsubmitted Boolean @default(false)
   newUsersStartDisabled   Boolean @default(false)
+  autoResultsEnabled      Boolean @default(false)
+  autoResultsDayOfWeek    Int     @default(2)
+  autoResultsHourUtc      Int     @default(12)
+  autoResultsMinuteUtc    Int     @default(0)
+  autoResultsAdvanceWeek  Boolean @default(false)
 
   league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
 }

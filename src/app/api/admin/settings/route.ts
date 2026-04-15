@@ -47,6 +47,11 @@ export async function PATCH(request: Request) {
     reminderMinuteUtc?: number;
     reminderOnlyUnsubmitted?: boolean;
     newUsersStartDisabled?: boolean;
+    autoResultsEnabled?: boolean;
+    autoResultsDayOfWeek?: number;
+    autoResultsHourUtc?: number;
+    autoResultsMinuteUtc?: number;
+    autoResultsAdvanceWeek?: boolean;
     action?: "testEmail";
     testEmailAddress?: string;
   };
@@ -95,6 +100,15 @@ export async function PATCH(request: Request) {
   if (body.reminderMinuteUtc !== undefined && (body.reminderMinuteUtc < 0 || body.reminderMinuteUtc > 59)) {
     return NextResponse.json({ error: "reminderMinuteUtc must be 0–59" }, { status: 400 });
   }
+  if (body.autoResultsDayOfWeek !== undefined && (body.autoResultsDayOfWeek < 0 || body.autoResultsDayOfWeek > 6)) {
+    return NextResponse.json({ error: "autoResultsDayOfWeek must be 0–6" }, { status: 400 });
+  }
+  if (body.autoResultsHourUtc !== undefined && (body.autoResultsHourUtc < 0 || body.autoResultsHourUtc > 23)) {
+    return NextResponse.json({ error: "autoResultsHourUtc must be 0–23" }, { status: 400 });
+  }
+  if (body.autoResultsMinuteUtc !== undefined && (body.autoResultsMinuteUtc < 0 || body.autoResultsMinuteUtc > 59)) {
+    return NextResponse.json({ error: "autoResultsMinuteUtc must be 0–59" }, { status: 400 });
+  }
 
   const adminSession = await getAdminSession();
   const leagueId = await getAdminLeagueId(adminSession);
@@ -115,6 +129,11 @@ export async function PATCH(request: Request) {
       reminderMinuteUtc: body.reminderMinuteUtc ?? 0,
       reminderOnlyUnsubmitted: body.reminderOnlyUnsubmitted ?? false,
       newUsersStartDisabled: body.newUsersStartDisabled ?? false,
+      autoResultsEnabled: body.autoResultsEnabled ?? false,
+      autoResultsDayOfWeek: body.autoResultsDayOfWeek ?? 2,
+      autoResultsHourUtc: body.autoResultsHourUtc ?? 12,
+      autoResultsMinuteUtc: body.autoResultsMinuteUtc ?? 0,
+      autoResultsAdvanceWeek: body.autoResultsAdvanceWeek ?? false,
     },
     update: {
       ...(body.mode !== undefined && { mode: body.mode }),
@@ -126,6 +145,11 @@ export async function PATCH(request: Request) {
       ...(body.reminderMinuteUtc !== undefined && { reminderMinuteUtc: body.reminderMinuteUtc }),
       ...(body.reminderOnlyUnsubmitted !== undefined && { reminderOnlyUnsubmitted: body.reminderOnlyUnsubmitted }),
       ...(body.newUsersStartDisabled !== undefined && { newUsersStartDisabled: body.newUsersStartDisabled }),
+      ...(body.autoResultsEnabled !== undefined && { autoResultsEnabled: body.autoResultsEnabled }),
+      ...(body.autoResultsDayOfWeek !== undefined && { autoResultsDayOfWeek: body.autoResultsDayOfWeek }),
+      ...(body.autoResultsHourUtc !== undefined && { autoResultsHourUtc: body.autoResultsHourUtc }),
+      ...(body.autoResultsMinuteUtc !== undefined && { autoResultsMinuteUtc: body.autoResultsMinuteUtc }),
+      ...(body.autoResultsAdvanceWeek !== undefined && { autoResultsAdvanceWeek: body.autoResultsAdvanceWeek }),
     },
   });
 
