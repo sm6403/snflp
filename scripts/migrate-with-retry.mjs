@@ -82,13 +82,20 @@ async function resolveFailedMigrations() {
     );
     console.log("[migrate] Recent migrations:", JSON.stringify(allRows.rows));
 
-    // Mark failed migrations as rolled-back directly in the table.
+    // Mark stuck/failed migrations as rolled-back directly in the table.
     // This is exactly what `prisma migrate resolve --rolled-back` does internally.
+    //
+    // Two failure modes:
+    //   1. Started but never finished (finished_at IS NULL, applied_steps_count = 0)
+    //      — process was killed mid-migration (Neon cold-start, build timeout, etc.)
+    //   2. Finished with error (finished_at IS NOT NULL, applied_steps_count = 0)
+    //      — migration ran but failed (constraint violation, etc.)
+    //
+    // In both cases, applied_steps_count = 0 and rolled_back_at IS NULL is the signal.
     const res = await client.query(
       `UPDATE _prisma_migrations
        SET rolled_back_at = NOW()
-       WHERE finished_at IS NOT NULL
-         AND rolled_back_at IS NULL
+       WHERE rolled_back_at IS NULL
          AND applied_steps_count = 0
        RETURNING migration_name`
     );
