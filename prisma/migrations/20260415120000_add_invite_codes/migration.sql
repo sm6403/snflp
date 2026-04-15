@@ -5,10 +5,12 @@
 ALTER TABLE "League" ADD COLUMN IF NOT EXISTS "inviteCode" TEXT;
 ALTER TABLE "League" ADD COLUMN IF NOT EXISTS "requireApproval" BOOLEAN NOT NULL DEFAULT false;
 
--- Backfill only rows where inviteCode is still NULL
--- gen_random_bytes() evaluates once per row — no duplicate codes
+-- Backfill only rows where inviteCode is still NULL.
+-- md5(id || clock_timestamp()) is unique per row (id is unique; clock_timestamp
+-- advances during execution) and uses only built-in PostgreSQL functions —
+-- no pgcrypto extension required.
 UPDATE "League"
-SET "inviteCode" = UPPER(SUBSTR(encode(gen_random_bytes(6), 'hex'), 1, 6))
+SET "inviteCode" = UPPER(SUBSTR(md5(id || clock_timestamp()::text), 1, 6))
 WHERE "inviteCode" IS NULL;
 
 -- Make NOT NULL (no-op if already set)
