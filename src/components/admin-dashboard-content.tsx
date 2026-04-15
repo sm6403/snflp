@@ -403,6 +403,7 @@ export function AdminDashboardContent() {
   const [togglingLeaderboard, setTogglingLeaderboard] = useState<string | null>(null);
   const [deletingUser, setDeletingUser] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [disabledOpen, setDisabledOpen] = useState(false);
 
   // Invite code & join requests
   const [leagueId, setLeagueId] = useState<string | null>(null);
@@ -536,7 +537,12 @@ export function AdminDashboardContent() {
           <div>
             <h2 className="text-xl font-bold text-zinc-50">Registered Users</h2>
             <span className="text-sm text-zinc-400">
-              {users.length} user{users.length !== 1 ? "s" : ""}
+              {users.filter((u) => !u.disabled).length} active
+              {users.filter((u) => u.disabled).length > 0 && (
+                <span className="ml-2 text-zinc-600">
+                  · {users.filter((u) => u.disabled).length} disabled
+                </span>
+              )}
             </span>
           </div>
           <AdminCreateUser onCreated={fetchUsers} />
@@ -614,125 +620,168 @@ export function AdminDashboardContent() {
           </div>
         )}
 
-        {loading ? (
-          <p className="text-zinc-400">Loading...</p>
-        ) : users.length === 0 ? (
-          <p className="text-zinc-400">No users registered yet.</p>
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-zinc-800">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-zinc-800/50 text-zinc-400">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Name</th>
-                  <th className="px-4 py-3 font-medium">Alias</th>
-                  <th className="px-4 py-3 font-medium">Email</th>
-                  <th className="px-4 py-3 font-medium">Team</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Leaderboard</th>
-                  <th className="px-4 py-3 font-medium">Last Login</th>
-                  {isSuperAdmin && <th className="px-4 py-3 font-medium">League</th>}
-                  <th className="px-4 py-3 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800">
-                {users.map((user) => (
-                  <tr key={user.id} className="text-zinc-300">
-                    <td className="px-4 py-3">{user.name || "—"}</td>
-                    <td className="px-4 py-3 text-zinc-400">{user.alias || "—"}</td>
-                    <td className="px-4 py-3">{user.email}</td>
-                    <td className="px-4 py-3 text-zinc-400">
-                      <div className="flex items-center gap-2">
-                        <img
-                          src={getTeamLogoUrl(user.favoriteTeam)}
-                          alt={user.favoriteTeam}
-                          className="h-6 w-6 object-contain"
-                        />
-                        {user.favoriteTeam}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                          user.disabled
-                            ? "bg-red-600/20 text-red-400"
-                            : "bg-green-600/20 text-green-400"
-                        }`}
-                      >
-                        {user.disabled ? "Disabled" : "Active"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <button
-                        onClick={() => handleLeaderboardToggle(user.id, user.showOnLeaderboard)}
-                        disabled={togglingLeaderboard === user.id}
-                        title={user.showOnLeaderboard ? "Visible on leaderboard — click to hide" : "Hidden from leaderboard — click to show"}
-                        className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-                          user.showOnLeaderboard ? "bg-indigo-600" : "bg-zinc-600"
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-                            user.showOnLeaderboard ? "translate-x-4" : "translate-x-0.5"
-                          }`}
-                        />
-                      </button>
-                    </td>
-                    <td className="px-4 py-3 text-zinc-500">
-                      {user.lastLoginAt
-                        ? new Date(user.lastLoginAt).toLocaleString()
-                        : "Never"}
-                    </td>
-                    {isSuperAdmin && (
-                      <td className="px-4 py-3 text-zinc-400">
-                        {user.userLeagues && user.userLeagues.length > 0
-                          ? user.userLeagues.map((ul) => ul.league.name).join(", ")
-                          : <span className="text-zinc-600 italic">None</span>}
-                      </td>
-                    )}
-                    <td className="px-4 py-3">
-                      <div className="flex gap-2">
-                        <AdminToggleButton
-                          userId={user.id}
-                          initialDisabled={user.disabled}
-                        />
-                        <Link
-                          href={`/admindash/users/${user.id}`}
-                          className="rounded-md bg-indigo-600/20 px-3 py-1 text-xs font-medium text-indigo-400 transition-colors hover:bg-indigo-600/30"
+        {(() => {
+          const activeUsers = users.filter((u) => !u.disabled);
+          const disabledUsers = users.filter((u) => u.disabled);
+
+          function renderRows(list: User[]) {
+            return list.map((user) => (
+              <tr key={user.id} className="text-zinc-300">
+                <td className="px-4 py-3">{user.name || "—"}</td>
+                <td className="px-4 py-3 text-zinc-400">{user.alias || "—"}</td>
+                <td className="px-4 py-3">{user.email}</td>
+                <td className="px-4 py-3 text-zinc-400">
+                  <div className="flex items-center gap-2">
+                    <img
+                      src={getTeamLogoUrl(user.favoriteTeam)}
+                      alt={user.favoriteTeam}
+                      className="h-6 w-6 object-contain"
+                    />
+                    {user.favoriteTeam}
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <button
+                    onClick={() => handleLeaderboardToggle(user.id, user.showOnLeaderboard)}
+                    disabled={togglingLeaderboard === user.id}
+                    title={user.showOnLeaderboard ? "Visible on leaderboard — click to hide" : "Hidden from leaderboard — click to show"}
+                    className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                      user.showOnLeaderboard ? "bg-indigo-600" : "bg-zinc-600"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                        user.showOnLeaderboard ? "translate-x-4" : "translate-x-0.5"
+                      }`}
+                    />
+                  </button>
+                </td>
+                <td className="px-4 py-3 text-zinc-500">
+                  {user.lastLoginAt
+                    ? new Date(user.lastLoginAt).toLocaleString()
+                    : "Never"}
+                </td>
+                {isSuperAdmin && (
+                  <td className="px-4 py-3 text-zinc-400">
+                    {user.userLeagues && user.userLeagues.length > 0
+                      ? user.userLeagues.map((ul) => ul.league.name).join(", ")
+                      : <span className="text-zinc-600 italic">None</span>}
+                  </td>
+                )}
+                <td className="px-4 py-3">
+                  <div className="flex gap-2">
+                    <AdminToggleButton
+                      userId={user.id}
+                      initialDisabled={user.disabled}
+                    />
+                    <Link
+                      href={`/admindash/users/${user.id}`}
+                      className="rounded-md bg-indigo-600/20 px-3 py-1 text-xs font-medium text-indigo-400 transition-colors hover:bg-indigo-600/30"
+                    >
+                      Manage
+                    </Link>
+                    {confirmDeleteId === user.id ? (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleDeleteUser(user.id)}
+                          disabled={deletingUser === user.id}
+                          className="rounded-md bg-red-600/30 px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-600/50 disabled:opacity-40"
                         >
-                          Manage
-                        </Link>
-                        {confirmDeleteId === user.id ? (
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => handleDeleteUser(user.id)}
-                              disabled={deletingUser === user.id}
-                              className="rounded-md bg-red-600/30 px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-600/50 disabled:opacity-40"
-                            >
-                              {deletingUser === user.id ? "Deleting…" : "Confirm"}
-                            </button>
-                            <button
-                              onClick={() => setConfirmDeleteId(null)}
-                              className="rounded-md px-2 py-1 text-xs text-zinc-500 hover:text-zinc-300"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setConfirmDeleteId(user.id)}
-                            className="rounded-md px-3 py-1 text-xs font-medium text-red-500 transition-colors hover:bg-red-900/20"
-                          >
-                            Delete
-                          </button>
-                        )}
+                          {deletingUser === user.id ? "Deleting…" : "Confirm"}
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="rounded-md px-2 py-1 text-xs text-zinc-500 hover:text-zinc-300"
+                        >
+                          Cancel
+                        </button>
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                    ) : (
+                      <button
+                        onClick={() => setConfirmDeleteId(user.id)}
+                        className="rounded-md px-3 py-1 text-xs font-medium text-red-500 transition-colors hover:bg-red-900/20"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ));
+          }
+
+          const tableHead = (
+            <thead className="bg-zinc-800/50 text-zinc-400">
+              <tr>
+                <th className="px-4 py-3 font-medium">Name</th>
+                <th className="px-4 py-3 font-medium">Alias</th>
+                <th className="px-4 py-3 font-medium">Email</th>
+                <th className="px-4 py-3 font-medium">Team</th>
+                <th className="px-4 py-3 font-medium">Leaderboard</th>
+                <th className="px-4 py-3 font-medium">Last Login</th>
+                {isSuperAdmin && <th className="px-4 py-3 font-medium">League</th>}
+                <th className="px-4 py-3 font-medium">Actions</th>
+              </tr>
+            </thead>
+          );
+
+          if (loading) return <p className="text-zinc-400">Loading...</p>;
+          if (users.length === 0) return <p className="text-zinc-400">No users registered yet.</p>;
+
+          return (
+            <>
+              {/* Active users table */}
+              {activeUsers.length === 0 ? (
+                <p className="text-zinc-500 text-sm">No active users.</p>
+              ) : (
+                <div className="overflow-hidden rounded-lg border border-zinc-800">
+                  <table className="w-full text-left text-sm">
+                    {tableHead}
+                    <tbody className="divide-y divide-zinc-800">
+                      {renderRows(activeUsers)}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Disabled users — collapsible */}
+              {disabledUsers.length > 0 && (
+                <div className="mt-4 rounded-lg border border-zinc-800">
+                  <button
+                    onClick={() => setDisabledOpen((o) => !o)}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-zinc-800/40"
+                  >
+                    <span className="text-sm font-medium text-zinc-400">
+                      Disabled accounts
+                      <span className="ml-2 rounded-full bg-zinc-700 px-2 py-0.5 text-xs font-semibold text-zinc-300">
+                        {disabledUsers.length}
+                      </span>
+                    </span>
+                    <svg
+                      className={`h-4 w-4 text-zinc-500 transition-transform ${disabledOpen ? "rotate-180" : ""}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {disabledOpen && (
+                    <div className="border-t border-zinc-800">
+                      <table className="w-full text-left text-sm">
+                        {tableHead}
+                        <tbody className="divide-y divide-zinc-800">
+                          {renderRows(disabledUsers)}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         {/* ── Admin accounts (superadmin only) ── */}
         {isSuperAdmin && <AdminAccountsSection />}
