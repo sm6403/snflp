@@ -11,6 +11,7 @@ interface AppSettings {
   reminderHourUtc: number;
   reminderMinuteUtc: number;
   reminderOnlyUnsubmitted: boolean;
+  newUsersStartDisabled: boolean;
 }
 
 type BulkLockState = "idle" | "locking" | "unlocking";
@@ -261,6 +262,13 @@ export function AdminSettingsContent() {
     await patchSettings({ reminderOnlyUnsubmitted: newVal });
   }
 
+  async function handleNewUsersDisabledToggle() {
+    if (!settings || saving) return;
+    const newVal = !settings.newUsersStartDisabled;
+    setSettings((s) => s ? { ...s, newUsersStartDisabled: newVal } : s);
+    await patchSettings({ newUsersStartDisabled: newVal });
+  }
+
   async function handleBulkFavoriteLock(locked: boolean) {
     setBulkLockState(locked ? "locking" : "unlocking");
     setBulkLockMsg(null);
@@ -350,6 +358,41 @@ export function AdminSettingsContent() {
                 </span>
               </div>
             </div>
+
+            {/* New user registration */}
+            {isSuperAdmin && (
+              <div className="rounded-lg border border-zinc-800 bg-zinc-800/50 p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-medium text-zinc-100">New Account Registration</h3>
+                    <p className="mt-1 text-sm text-zinc-400">
+                      {settings?.newUsersStartDisabled
+                        ? "New accounts start disabled — an admin must manually activate them before they can log in."
+                        : "New accounts start active and can log in immediately after signing up."}
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleNewUsersDisabledToggle}
+                    disabled={saving}
+                    aria-label={`${settings?.newUsersStartDisabled ? "Allow new accounts to start active" : "Require admin activation for new accounts"}`}
+                    className={`relative inline-flex h-7 w-14 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                      settings?.newUsersStartDisabled ? "bg-amber-600" : "bg-zinc-600"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                        settings?.newUsersStartDisabled ? "translate-x-8" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+                {settings?.newUsersStartDisabled && (
+                  <p className="mt-3 text-xs text-amber-400/80">
+                    ⚠ New sign-ups will be inactive until enabled in the Users panel.
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Favourite team bulk lock */}
             <div className="rounded-lg border border-zinc-800 bg-zinc-800/50 p-6">

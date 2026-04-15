@@ -46,6 +46,7 @@ export async function PATCH(request: Request) {
     reminderHourUtc?: number;
     reminderMinuteUtc?: number;
     reminderOnlyUnsubmitted?: boolean;
+    newUsersStartDisabled?: boolean;
     action?: "testEmail";
     testEmailAddress?: string;
   };
@@ -113,6 +114,7 @@ export async function PATCH(request: Request) {
       reminderHourUtc: body.reminderHourUtc ?? 12,
       reminderMinuteUtc: body.reminderMinuteUtc ?? 0,
       reminderOnlyUnsubmitted: body.reminderOnlyUnsubmitted ?? false,
+      newUsersStartDisabled: body.newUsersStartDisabled ?? false,
     },
     update: {
       ...(body.mode !== undefined && { mode: body.mode }),
@@ -123,6 +125,7 @@ export async function PATCH(request: Request) {
       ...(body.reminderHourUtc !== undefined && { reminderHourUtc: body.reminderHourUtc }),
       ...(body.reminderMinuteUtc !== undefined && { reminderMinuteUtc: body.reminderMinuteUtc }),
       ...(body.reminderOnlyUnsubmitted !== undefined && { reminderOnlyUnsubmitted: body.reminderOnlyUnsubmitted }),
+      ...(body.newUsersStartDisabled !== undefined && { newUsersStartDisabled: body.newUsersStartDisabled }),
     },
   });
 
