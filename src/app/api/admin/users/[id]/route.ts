@@ -28,8 +28,11 @@ export async function GET(
 
   const { id } = await params;
 
+  // Superadmin can manage any user; DB admins are scoped to their own league
   const getAdminSess = await getAdminSession();
-  const getLeagueId = await getAdminLeagueId(getAdminSess);
+  const getLeagueId = getAdminSess?.role === "admin"
+    ? await getAdminLeagueId(getAdminSess)
+    : null;
   if (getLeagueId) {
     const membership = await prisma.userLeague.findUnique({
       where: { userId_leagueId: { userId: id, leagueId: getLeagueId } },
@@ -94,8 +97,11 @@ export async function DELETE(
 
   const { id } = await params;
 
+  // Superadmin can delete any user; DB admins are scoped to their own league
   const delAdminSess = await getAdminSession();
-  const delLeagueId = await getAdminLeagueId(delAdminSess);
+  const delLeagueId = delAdminSess?.role === "admin"
+    ? await getAdminLeagueId(delAdminSess)
+    : null;
   if (delLeagueId) {
     const membership = await prisma.userLeague.findUnique({
       where: { userId_leagueId: { userId: id, leagueId: delLeagueId } },
@@ -140,8 +146,11 @@ export async function PATCH(
 
   const { id } = await params;
 
+  // Superadmin can update any user; DB admins are scoped to their own league
   const patchAdminSess = await getAdminSession();
-  const patchLeagueId = await getAdminLeagueId(patchAdminSess);
+  const patchLeagueId = patchAdminSess?.role === "admin"
+    ? await getAdminLeagueId(patchAdminSess)
+    : null;
   if (patchLeagueId) {
     const membership = await prisma.userLeague.findUnique({
       where: { userId_leagueId: { userId: id, leagueId: patchLeagueId } },
