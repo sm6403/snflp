@@ -1,12 +1,18 @@
 /**
  * Runs `prisma migrate deploy` with retries.
  *
- * Before each attempt, connects directly to Postgres and releases any
- * stuck Prisma advisory lock (lock ID 72707369 = pg_advisory_lock hash
- * of "prisma_migrate"). This prevents P1002 timeouts caused by a
- * previous deployment dying mid-migration and leaving the lock held.
+ * Before each attempt:
+ *   1. Releases any stuck Prisma advisory lock (prevents P1002 timeouts).
+ *   2. Resolves any failed migrations (P3009) by marking them as rolled back,
+ *      so they can be cleanly re-applied on the next attempt.
+ *
+ * A migration can get stuck in "failed" state when a previous deployment ran
+ * a migration that errored mid-way (e.g. a unique constraint violation during
+ * a backfill). Prisma wraps migrations in transactions, so no partial changes
+ * are left in the DB — it's safe to mark the migration as rolled-back and
+ * re-run it with the corrected SQL.
  */
-import { execSync } from "child_process";
+import { execSync, execFileSync } from "child_process";
 import pg from "pg";
 
 const MAX_ATTEMPTS = 5;
@@ -23,7 +29,6 @@ async function releaseLock() {
   const client = new pg.Client({ connectionString: connStr });
   try {
     await client.connect();
-    // Terminate any backend session that holds the Prisma advisory lock
     const res = await client.query(
       `SELECT pg_terminate_backend(pid)
        FROM pg_locks
@@ -35,8 +40,56 @@ async function releaseLock() {
       console.log(`[migrate] Released stuck advisory lock (${res.rowCount} session(s) terminated).`);
     }
   } catch (err) {
-    // Non-fatal — log and continue; the migration will handle its own errors
     console.warn("[migrate] Could not release advisory lock:", err.message);
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Finds any migrations marked as failed in _prisma_migrations and resolves
+ * them as rolled-back so prisma migrate deploy can re-apply them.
+ *
+ * A failed migration row has: finished_at IS NOT NULL, rolled_back_at IS NULL,
+ * and logs IS NOT NULL (contains the error). Because Prisma wraps each
+ * migration in a transaction, a failure means zero DB changes were committed,
+ * so rolling back and re-running is always safe.
+ */
+async function resolveFailedMigrations() {
+  const client = new pg.Client({ connectionString: connStr });
+  try {
+    await client.connect();
+
+    // Check that the migrations table exists (it won't on a brand-new DB)
+    const tableCheck = await client.query(
+      `SELECT 1 FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = '_prisma_migrations'`
+    );
+    if (tableCheck.rowCount === 0) return;
+
+    const res = await client.query(
+      `SELECT migration_name
+       FROM _prisma_migrations
+       WHERE finished_at IS NOT NULL
+         AND rolled_back_at IS NULL
+         AND logs IS NOT NULL`
+    );
+
+    for (const row of res.rows) {
+      const name = row.migration_name;
+      console.log(`[migrate] Resolving failed migration as rolled-back: ${name}`);
+      try {
+        execFileSync(
+          "npx",
+          ["prisma", "migrate", "resolve", "--rolled-back", name],
+          { stdio: "inherit" }
+        );
+      } catch (err) {
+        console.warn(`[migrate] Could not resolve migration ${name}:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.warn("[migrate] Could not check for failed migrations:", err.message);
   } finally {
     await client.end();
   }
@@ -45,6 +98,7 @@ async function releaseLock() {
 for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
   console.log(`[migrate] Attempt ${attempt}/${MAX_ATTEMPTS}…`);
   await releaseLock();
+  await resolveFailedMigrations();
 
   try {
     execSync("npx prisma migrate deploy", { stdio: "inherit" });
