@@ -275,6 +275,20 @@ Each season contains weeks. Weeks hold individual games and track pick submissio
 - **Lock week** — prevents new pick submissions. Can be done manually or automatically (with timed auto-locking).
 - **Confirm results** — after games finish, enter results to score all picks and update the leaderboard.
 
+#### Importing schedules from ESPN
+
+In the week editor (**Seasons → [season] → [week]**), click **⬇ Import from ESPN** to automatically pull that week's matchups and kick-off times from ESPN's public scoreboard API. A preview panel shows the fetched games before anything is written — click **Apply to Schedule** to populate the game rows, or **Discard** to cancel.
+
+This uses ESPN's unofficial public API (no account or API key required). The 2025 regular season and all prior seasons are available. The 2026 schedule will become available once ESPN publishes it.
+
+> Game times are in UTC. The import fills the schedule editor rows exactly as if you had entered them manually — you can still edit individual games before saving.
+
+#### Importing results from ESPN
+
+Once a week is locked and the **Enter Results** panel is open, click **⬇ Import Results from ESPN** to automatically fill in all final scores. Winners are determined by comparing ESPN's final scores; equal scores are marked as ties. Games that haven't finished yet are skipped, so partial imports work correctly during a live game day.
+
+After importing you can still override any individual game result before clicking **Publish All Results**.
+
 ---
 
 ### Users
