@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { LeagueSwitcher } from "@/components/league-switcher";
 
 interface UserNavProps {
   active: "dashboard" | "leaderboard" | "settings";
+  activeLeagueId?: string | null;
 }
 
-export function UserNav({ active }: UserNavProps) {
+export function UserNav({ active, activeLeagueId }: UserNavProps) {
   const version = process.env.NEXT_PUBLIC_APP_VERSION ?? "dev";
 
   const linkClass = (page: UserNavProps["active"]) =>
@@ -16,6 +18,8 @@ export function UserNav({ active }: UserNavProps) {
 
   return (
     <nav className="flex items-center gap-1">
+      <LeagueSwitcher activeLeagueId={activeLeagueId} />
+      <span className="mx-1 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
       <Link href="/dashboard" className={linkClass("dashboard")}>
         Dashboard
       </Link>

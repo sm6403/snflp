@@ -60,15 +60,21 @@ export async function PATCH(
   }
 
   if (body.isCurrent === true) {
+    // Resolve leagueId from the season
+    const season = await prisma.season.findUnique({ where: { id: week.seasonId }, select: { leagueId: true } });
+    const leagueId = season?.leagueId;
+
     await prisma.$transaction(async (tx) => {
       await tx.week.updateMany({ where: { seasonId: week.seasonId }, data: { isCurrent: false } });
       // Set as current and ensure it's unlocked so users can submit picks
       await tx.week.update({ where: { id: weekId }, data: { isCurrent: true, lockedForSubmission: false } });
-      await tx.appSettings.upsert({
-        where: { id: "singleton" },
-        create: { id: "singleton", mode: "live", testSeasonId: week.seasonId, testWeekId: weekId },
-        update: { testSeasonId: week.seasonId, testWeekId: weekId },
-      });
+      if (leagueId) {
+        await tx.leagueSettings.upsert({
+          where: { leagueId },
+          create: { leagueId, mode: "live", testSeasonId: week.seasonId, testWeekId: weekId },
+          update: { testSeasonId: week.seasonId, testWeekId: weekId },
+        });
+      }
     });
   }
 

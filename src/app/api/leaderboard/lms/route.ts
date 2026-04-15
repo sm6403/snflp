@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { verifyAdminSession } from "@/lib/admin-auth";
+import { getAdminSession } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
+import { resolveUserLeagueId, getAdminLeagueId } from "@/lib/league-context";
 
 // GET /api/leaderboard/lms?round=N
 // Returns Last Man Standing standings for the current season.
@@ -9,7 +10,8 @@ import { prisma } from "@/lib/prisma";
 // If ?round=N is provided, returns standings for that round; otherwise defaults to current round.
 export async function GET(request: Request) {
   const session = await auth();
-  const isAdmin = !session?.user?.id && (await verifyAdminSession());
+  const adminSession = !session?.user?.id ? await getAdminSession() : null;
+  const isAdmin = !!adminSession;
   if (!session?.user?.id && !isAdmin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -17,7 +19,13 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const roundParam = searchParams.get("round");
 
-  const season = await prisma.season.findFirst({ where: { isCurrent: true } });
+  const leagueId = session?.user?.id
+    ? await resolveUserLeagueId(session.user.id)
+    : await getAdminLeagueId(adminSession);
+  if (!leagueId) {
+    return NextResponse.json({ season: null, ruleLMS: false, lmsRound: 1, availableRounds: [], players: [] });
+  }
+  const season = await prisma.season.findFirst({ where: { isCurrent: true, leagueId } });
   if (!season) {
     return NextResponse.json({ season: null, ruleLMS: false, lmsRound: 1, availableRounds: [], players: [] });
   }
@@ -49,9 +57,9 @@ export async function GET(request: Request) {
   const requestedRound = roundParam ? parseInt(roundParam, 10) : currentRound;
   const viewRound = availableRounds.includes(requestedRound) ? requestedRound : currentRound;
 
-  // All eligible users
+  // All eligible users in this league
   const eligibleUsers = await prisma.user.findMany({
-    where: { showOnLeaderboard: true },
+    where: { showOnLeaderboard: true, userLeagues: { some: { leagueId } } },
     select: { id: true, name: true, alias: true },
   });
 

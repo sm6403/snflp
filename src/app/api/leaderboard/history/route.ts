@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getCurrentWeek } from "@/lib/nfl-data";
+import { resolveUserLeagueId } from "@/lib/league-context";
 
 // GET /api/leaderboard/history
 // Returns the current user's weekly position and cumulative season position
@@ -12,7 +13,9 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const currentWeek = await getCurrentWeek();
+  const leagueId = await resolveUserLeagueId(session.user.id);
+  if (!leagueId) return NextResponse.json({ weeks: [] });
+  const currentWeek = await getCurrentWeek(leagueId);
   if (!currentWeek) {
     return NextResponse.json({ weeks: [] });
   }
@@ -30,9 +33,9 @@ export async function GET() {
 
   const userId = session.user.id;
 
-  // Eligible users (same filter as the live leaderboard)
+  // Eligible users (same filter as the live leaderboard, scoped to league)
   const eligibleUsers = await prisma.user.findMany({
-    where: { disabled: false, showOnLeaderboard: true },
+    where: { disabled: false, showOnLeaderboard: true, userLeagues: { some: { leagueId } } },
     select: { id: true },
   });
   const totalPlayers = eligibleUsers.length;

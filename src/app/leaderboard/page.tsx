@@ -3,11 +3,27 @@ import { redirect } from "next/navigation";
 import { SignOutButton } from "@/components/sign-out-button";
 import { UserNav } from "@/components/user-nav";
 import { LeaderboardTabs } from "./leaderboard-tabs";
+import { resolveUserLeagueId } from "@/lib/league-context";
 
 export default async function LeaderboardPage() {
   const session = await auth();
   if (!session?.user?.id) {
     redirect("/signin");
+  }
+
+  const leagueId = await resolveUserLeagueId(session.user.id);
+
+  if (!leagueId) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">No League Found</h2>
+          <p className="mt-2 text-zinc-600 dark:text-zinc-400">
+            You are not a member of any league yet. Please contact your league administrator.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -18,7 +34,7 @@ export default async function LeaderboardPage() {
             <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
               SNFLP
             </h1>
-            <UserNav active="leaderboard" />
+            <UserNav active="leaderboard" activeLeagueId={leagueId} />
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-zinc-600 dark:text-zinc-400">

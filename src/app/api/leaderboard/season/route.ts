@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { verifyAdminSession } from "@/lib/admin-auth";
+import { getAdminSession } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
+import { resolveUserLeagueId, getAdminLeagueId } from "@/lib/league-context";
 
 // GET /api/leaderboard/season
 // Returns all users ranked by season stats for the current season.
@@ -9,14 +10,21 @@ import { prisma } from "@/lib/prisma";
 // positionChange compares current ranking vs ranking without the most-recently-confirmed week.
 export async function GET() {
   const session = await auth();
-  const isAdmin = !session?.user?.id && (await verifyAdminSession());
+  const adminSession = !session?.user?.id ? await getAdminSession() : null;
+  const isAdmin = !!adminSession;
   if (!session?.user?.id && !isAdmin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const currentUserId = session?.user?.id ?? "";
 
+  const leagueId = session?.user?.id
+    ? await resolveUserLeagueId(session.user.id)
+    : await getAdminLeagueId(adminSession);
+  if (!leagueId) {
+    return NextResponse.json({ season: null, users: [], mostRecentWeekLabel: null, currentUserId });
+  }
   const season = await prisma.season.findFirst({
-    where: { isCurrent: true },
+    where: { isCurrent: true, leagueId },
     select: { id: true, year: true, usesDivisions: true },
   });
   if (!season) {
@@ -43,9 +51,9 @@ export async function GET() {
   const allConfirmedWeekIds = confirmedWeeks.map((w) => w.id);
   const previousWeekIds = allConfirmedWeekIds.slice(1); // all except most recent
 
-  // Fetch all users who are active and visible on the leaderboard
+  // Fetch all users who are active, visible on the leaderboard, and in this league
   const users = await prisma.user.findMany({
-    where: { disabled: false, showOnLeaderboard: true },
+    where: { disabled: false, showOnLeaderboard: true, userLeagues: { some: { leagueId } } },
     select: { id: true, name: true, alias: true, email: true, favoriteTeam: true },
   });
 

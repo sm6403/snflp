@@ -14,7 +14,7 @@ export async function GET(_request: Request, { params }: Params) {
 
   const season = await prisma.season.findUnique({
     where: { id: seasonId },
-    select: { id: true, usesDivisions: true },
+    select: { id: true, usesDivisions: true, leagueId: true },
   });
   if (!season) return NextResponse.json({ error: "Season not found" }, { status: 404 });
 
@@ -24,9 +24,9 @@ export async function GET(_request: Request, { params }: Params) {
     include: { _count: { select: { userDivisions: true } } },
   });
 
-  // All active leaderboard users, with their explicit division assignment for this season
+  // All active users in this league, with their explicit division assignment for this season
   const allUsers = await prisma.user.findMany({
-    where: { disabled: false },
+    where: { disabled: false, userLeagues: { some: { leagueId: season.leagueId } } },
     select: {
       id: true,
       name: true,
