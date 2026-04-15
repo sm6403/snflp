@@ -12,6 +12,11 @@ interface AppSettings {
   reminderMinuteUtc: number;
   reminderOnlyUnsubmitted: boolean;
   newUsersStartDisabled: boolean;
+  autoResultsEnabled: boolean;
+  autoResultsDayOfWeek: number;
+  autoResultsHourUtc: number;
+  autoResultsMinuteUtc: number;
+  autoResultsAdvanceWeek: boolean;
 }
 
 type BulkLockState = "idle" | "locking" | "unlocking";
@@ -135,12 +140,18 @@ export function AdminSettingsContent() {
   const [testEmailAddress, setTestEmailAddress] = useState("");
   const [testEmailState, setTestEmailState] = useState<TestEmailState>("idle");
   const [testEmailMsg, setTestEmailMsg] = useState<string | null>(null);
-  // Schedule form — local draft state, saved explicitly with "Save Schedule"
+  // Email reminder schedule form — local draft state, saved explicitly with "Save Schedule"
   const [schedDay, setSchedDay] = useState(4);
   const [schedHour, setSchedHour] = useState(12);
   const [schedMinute, setSchedMinute] = useState(0);
   const [schedSaving, setSchedSaving] = useState(false);
   const [schedSaved, setSchedSaved] = useState(false);
+  // Auto-results schedule form — local draft state
+  const [autoDay, setAutoDay] = useState(2);
+  const [autoHour, setAutoHour] = useState(12);
+  const [autoMinute, setAutoMinute] = useState(0);
+  const [autoSchedSaving, setAutoSchedSaving] = useState(false);
+  const [autoSchedSaved, setAutoSchedSaved] = useState(false);
 
   const fetchSettings = useCallback(async () => {
     const res = await fetch("/api/admin/settings");
@@ -153,6 +164,9 @@ export function AdminSettingsContent() {
         setSchedDay(data.settings.reminderDayOfWeek ?? 4);
         setSchedHour(data.settings.reminderHourUtc ?? 12);
         setSchedMinute(data.settings.reminderMinuteUtc ?? 0);
+        setAutoDay(data.settings.autoResultsDayOfWeek ?? 2);
+        setAutoHour(data.settings.autoResultsHourUtc ?? 12);
+        setAutoMinute(data.settings.autoResultsMinuteUtc ?? 0);
       }
     }
     setLoading(false);
@@ -267,6 +281,49 @@ export function AdminSettingsContent() {
     const newVal = !settings.newUsersStartDisabled;
     setSettings((s) => s ? { ...s, newUsersStartDisabled: newVal } : s);
     await patchSettings({ newUsersStartDisabled: newVal });
+  }
+
+  async function handleAutoResultsToggle() {
+    if (!settings || saving) return;
+    const newVal = !settings.autoResultsEnabled;
+    setSettings((s) => s ? { ...s, autoResultsEnabled: newVal } : s);
+    await patchSettings({ autoResultsEnabled: newVal });
+  }
+
+  async function handleAutoAdvanceToggle() {
+    if (!settings || saving) return;
+    const newVal = !settings.autoResultsAdvanceWeek;
+    setSettings((s) => s ? { ...s, autoResultsAdvanceWeek: newVal } : s);
+    await patchSettings({ autoResultsAdvanceWeek: newVal });
+  }
+
+  async function handleSaveAutoSchedule(e: React.FormEvent) {
+    e.preventDefault();
+    setAutoSchedSaving(true);
+    setAutoSchedSaved(false);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          autoResultsDayOfWeek: autoDay,
+          autoResultsHourUtc: autoHour,
+          autoResultsMinuteUtc: autoMinute,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSettings(data.settings);
+        setAutoSchedSaved(true);
+        setTimeout(() => setAutoSchedSaved(false), 2500);
+      } else {
+        setError(data.error ?? "Failed to save schedule");
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setAutoSchedSaving(false);
+    }
   }
 
   async function handleBulkFavoriteLock(locked: boolean) {
@@ -560,6 +617,116 @@ export function AdminSettingsContent() {
                     {testEmailMsg}
                   </p>
                 )}
+              </div>
+            </div>
+
+            {/* Automatic result processing */}
+            <div className="rounded-lg border border-zinc-800 bg-zinc-800/50 p-6 space-y-5">
+              {/* Master toggle */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-medium text-zinc-100">Automatic Result Processing</h3>
+                  <p className="mt-1 text-sm text-zinc-400">
+                    {settings?.autoResultsEnabled
+                      ? "Enabled — the app will fetch ESPN scores and publish results automatically at the configured time."
+                      : "Disabled — results must be published manually from the Enter Results panel."}
+                  </p>
+                </div>
+                <button
+                  onClick={handleAutoResultsToggle}
+                  disabled={saving}
+                  aria-label={`${settings?.autoResultsEnabled ? "Disable" : "Enable"} automatic result processing`}
+                  className={`relative inline-flex h-7 w-14 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                    settings?.autoResultsEnabled ? "bg-indigo-600" : "bg-zinc-600"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                      settings?.autoResultsEnabled ? "translate-x-8" : "translate-x-1"
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Processing schedule */}
+              <div className="border-t border-zinc-700/60 pt-5">
+                <p className="mb-1 text-sm font-medium text-zinc-300">Processing schedule</p>
+                <p className="mb-3 text-xs text-zinc-500">
+                  The cron runs every 15 minutes and processes results within a 20-minute window of this UTC time. Default: Tuesday noon UTC (after Monday Night Football).
+                </p>
+                <form onSubmit={handleSaveAutoSchedule} className="flex flex-wrap items-end gap-3">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-zinc-400">Day</label>
+                    <select
+                      value={autoDay}
+                      onChange={(e) => setAutoDay(Number(e.target.value))}
+                      className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+                    >
+                      {["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((d, i) => (
+                        <option key={i} value={i}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-zinc-400">Hour (UTC)</label>
+                    <select
+                      value={autoHour}
+                      onChange={(e) => setAutoHour(Number(e.target.value))}
+                      className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+                    >
+                      {Array.from({ length: 24 }, (_, h) => (
+                        <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-zinc-400">Minute</label>
+                    <select
+                      value={autoMinute}
+                      onChange={(e) => setAutoMinute(Number(e.target.value))}
+                      className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+                    >
+                      {[0, 15, 30, 45].map((m) => (
+                        <option key={m} value={m}>:{String(m).padStart(2, "0")}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={autoSchedSaving}
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {autoSchedSaving ? "Saving…" : "Save Schedule"}
+                  </button>
+                  {autoSchedSaved && <span className="text-sm text-green-400">Saved ✓</span>}
+                </form>
+              </div>
+
+              {/* Advance to next week */}
+              <div className="border-t border-zinc-700/60 pt-5">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="auto-advance"
+                    checked={settings?.autoResultsAdvanceWeek ?? false}
+                    onChange={handleAutoAdvanceToggle}
+                    disabled={saving}
+                    className="h-4 w-4 rounded border-zinc-600 bg-zinc-900 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-zinc-900"
+                  />
+                  <label htmlFor="auto-advance" className="text-sm font-medium text-zinc-300 cursor-pointer">
+                    Automatically advance to the next week after publishing results
+                  </label>
+                </div>
+                <p className="mt-1.5 ml-7 text-xs text-zinc-500">
+                  Marks the next week as current and unlocks it for submissions.
+                </p>
+              </div>
+
+              {/* Warning note */}
+              <div className="border-t border-zinc-700/60 pt-4">
+                <p className="text-xs text-zinc-500">
+                  ⚠ Requires all games to have final scores on ESPN. If any games are still in progress, results will not be published automatically — manual entry will be required for that week.
+                </p>
               </div>
             </div>
 
