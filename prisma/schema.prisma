@@ -6,6 +6,66 @@ datasource db {
   provider = "postgresql"
 }
 
+// ─── League (top-level container) ────────────────────────────────────────────
+
+model League {
+  id              String   @id @default(cuid())
+  name            String
+  inviteCode      String   @unique
+  requireApproval Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  seasons      Season[]
+  userLeagues  UserLeague[]
+  adminUsers   AdminUser[]
+  settings     LeagueSettings?
+  joinRequests LeagueJoinRequest[]
+}
+
+model UserLeague {
+  id       String   @id @default(cuid())
+  userId   String
+  leagueId String
+  joinedAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, leagueId])
+}
+
+model LeagueJoinRequest {
+  id        String   @id @default(cuid())
+  userId    String
+  leagueId  String
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, leagueId])
+}
+
+model LeagueSettings {
+  id                      String  @id @default(cuid())
+  leagueId                String  @unique
+  mode                    String  @default("live")
+  testSeasonId            String?
+  testWeekId              String?
+  emailRemindersEnabled   Boolean @default(false)
+  reminderDayOfWeek       Int     @default(4)
+  reminderHourUtc         Int     @default(12)
+  reminderMinuteUtc       Int     @default(0)
+  reminderOnlyUnsubmitted Boolean @default(false)
+
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+}
+
+// ─── Identity ────────────────────────────────────────────────────────────────
+
 model User {
   id                String    @id @default(cuid())
   name              String?
@@ -24,7 +84,23 @@ model User {
   lmsPicks          LmsPick[]
   notificationLogs  NotificationLog[]
   divisionMemberships UserDivision[]
+  userLeagues       UserLeague[]
+  joinRequests      LeagueJoinRequest[]
 }
+
+model AdminUser {
+  id             String    @id @default(cuid())
+  username       String    @unique
+  hashedPassword String
+  disabled       Boolean   @default(false)
+  leagueId       String
+  createdAt      DateTime  @default(now())
+  lastLoginAt    DateTime?
+
+  league League @relation(fields: [leagueId], references: [id])
+}
+
+// ─── Season structure ────────────────────────────────────────────────────────
 
 model Season {
   id               String   @id @default(cuid())
@@ -32,6 +108,7 @@ model Season {
   type             String   @default("regular")    // "regular" | "postseason"
   mode             String   @default("live")        // "live" | "test"
   isCurrent        Boolean  @default(false)
+  leagueId         String
   timedAutolocking           Boolean  @default(false)
   ruleFavouriteTeamBonusWin  Boolean  @default(false)
   ruleLMS                    Boolean  @default(false)
@@ -40,13 +117,14 @@ model Season {
   parentSeasonId   String?
   parentSeason     Season?  @relation("PostSeason", fields: [parentSeasonId], references: [id])
   childSeasons     Season[] @relation("PostSeason")
+  league           League   @relation(fields: [leagueId], references: [id])
   weeks            Week[]
   lmsPicks         LmsPick[]
   divisions        Division[]
   userDivisions    UserDivision[]
   createdAt        DateTime @default(now())
 
-  @@unique([year, type])
+  @@unique([year, type, leagueId])
 }
 
 model Week {
@@ -144,30 +222,6 @@ model Pick {
   @@unique([pickSetId, gameId])
 }
 
-model AppSettings {
-  id                      String  @id @default("singleton")
-  mode                    String  @default("live")
-  testSeasonId            String?
-  testWeekId              String?
-  emailRemindersEnabled   Boolean @default(false)
-  // Scheduled weekly reminder: which day + time (UTC) to send
-  // dayOfWeek: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
-  reminderDayOfWeek       Int     @default(4)
-  reminderHourUtc         Int     @default(12)
-  reminderMinuteUtc       Int     @default(0)
-  // When true, only send to users who have NOT yet locked their picks this week
-  reminderOnlyUnsubmitted Boolean @default(false)
-}
-
-model AdminUser {
-  id             String    @id @default(cuid())
-  username       String    @unique
-  hashedPassword String
-  disabled       Boolean   @default(false)
-  createdAt      DateTime  @default(now())
-  lastLoginAt    DateTime?
-}
-
 model LmsPick {
   id         String   @id @default(cuid())
   userId     String
@@ -192,6 +246,7 @@ model AdminAuditLog {
   adminName String   // "superadmin" or the admin's username; stored directly so logs survive account deletion
   action    String   // e.g. "LOCK_WEEK", "EDIT_PICK", "CONFIRM_RESULTS"
   detail    String   // JSON string with contextual data
+  leagueId  String?  // optional — null for cross-league superadmin actions
   createdAt DateTime @default(now())
 }
 

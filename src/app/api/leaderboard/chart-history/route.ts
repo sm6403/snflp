@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { verifyAdminSession } from "@/lib/admin-auth";
+import { getAdminSession } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
 import { getCurrentWeek } from "@/lib/nfl-data";
+import { resolveUserLeagueId, getAdminLeagueId } from "@/lib/league-context";
 
 // GET /api/leaderboard/chart-history
 // Returns every eligible user's weekly rank AND cumulative season rank for each
@@ -10,13 +11,20 @@ import { getCurrentWeek } from "@/lib/nfl-data";
 // Accessible by regular users (session) or admins (admin cookie).
 export async function GET() {
   const session = await auth();
-  const isAdmin = !session?.user?.id && (await verifyAdminSession());
+  const adminSession = !session?.user?.id ? await getAdminSession() : null;
+  const isAdmin = !!adminSession;
   if (!session?.user?.id && !isAdmin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const currentUserId = session?.user?.id ?? "";
 
-  const currentWeek = await getCurrentWeek();
+  const leagueId = session?.user?.id
+    ? await resolveUserLeagueId(session.user.id)
+    : await getAdminLeagueId(adminSession);
+  if (!leagueId) {
+    return NextResponse.json({ error: "No league context" }, { status: 400 });
+  }
+  const currentWeek = await getCurrentWeek(leagueId);
   if (!currentWeek) {
     return NextResponse.json({
       confirmedWeeks: [],
@@ -42,7 +50,7 @@ export async function GET() {
   }
 
   const eligibleUsers = await prisma.user.findMany({
-    where: { disabled: false, showOnLeaderboard: true },
+    where: { disabled: false, showOnLeaderboard: true, userLeagues: { some: { leagueId } } },
     select: { id: true, name: true, alias: true, email: true },
   });
   const totalPlayers = eligibleUsers.length;

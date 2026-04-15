@@ -33,10 +33,10 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   const updated = await prisma.$transaction(async (tx) => {
-    // If setting isCurrent=true, clear it on all other seasons first
+    // If setting isCurrent=true, clear it on all other seasons in the SAME league
     if (body.isCurrent === true) {
       await tx.season.updateMany({
-        where: { id: { not: seasonId } },
+        where: { id: { not: seasonId }, leagueId: season.leagueId },
         data: { isCurrent: false },
       });
     }

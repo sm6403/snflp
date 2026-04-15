@@ -26,171 +26,170 @@ export async function GET(request: Request) {
     }
   }
 
-  // ── Admin kill switch ─────────────────────────────────────────────────────────
-  const appSettings = await prisma.appSettings.findFirst();
-  if (!appSettings?.emailRemindersEnabled) {
-    return NextResponse.json({ skipped: true, reason: "emailRemindersEnabled is false" });
-  }
+  // ── Process all leagues ─────────────────────────────────────────────────────
+  const allLeagueSettings = await prisma.leagueSettings.findMany({
+    where: { emailRemindersEnabled: true },
+  });
 
-  const {
-    reminderDayOfWeek,
-    reminderHourUtc,
-    reminderMinuteUtc,
-    reminderOnlyUnsubmitted,
-  } = appSettings;
+  if (allLeagueSettings.length === 0) {
+    return NextResponse.json({ skipped: true, reason: "No leagues with emailRemindersEnabled" });
+  }
 
   const appUrl = (process.env.APP_URL ?? "").replace(/\/$/, "");
   const now = new Date();
-  const results: Array<{ type: string; sent: number; errors: number }> = [];
+  const results: Array<{ leagueId: string; type: string; sent: number; errors: number }> = [];
 
-  // ── Load current week ─────────────────────────────────────────────────────────
-  const week = await prisma.week.findFirst({
-    where: { isCurrent: true },
-    include: {
-      season: { select: { year: true } },
-      games: {
-        select: {
-          gameTime: true,
-          homeTeam: { select: { name: true } },
-          awayTeam: { select: { name: true } },
+  for (const leagueSettings of allLeagueSettings) {
+    const {
+      leagueId,
+      reminderDayOfWeek,
+      reminderHourUtc,
+      reminderMinuteUtc,
+      reminderOnlyUnsubmitted,
+    } = leagueSettings;
+
+    // ── Load current week for this league ───────────────────────────────────────
+    const week = await prisma.week.findFirst({
+      where: { isCurrent: true, season: { leagueId } },
+      include: {
+        season: { select: { year: true } },
+        games: {
+          select: {
+            gameTime: true,
+            homeTeam: { select: { name: true } },
+            awayTeam: { select: { name: true } },
+          },
+          orderBy: { gameTime: "asc" },
         },
-        orderBy: { gameTime: "asc" },
       },
-    },
-  });
+    });
 
-  if (!week) {
-    return NextResponse.json({ skipped: true, reason: "No current week" });
-  }
+    if (!week) continue;
 
-  // ── Helper: build eligible user list ─────────────────────────────────────────
-  async function getEligibleUsers(alreadySentIds: string[]) {
-    // Base filter: active + opted-in + not already notified this week+type
-    const baseWhere = {
-      disabled: false,
-      emailReminders: true,
-      ...(alreadySentIds.length > 0 && { id: { notIn: alreadySentIds } }),
-    };
+    // ── Helper: build eligible user list ───────────────────────────────────────
+    async function getEligibleUsers(alreadySentIds: string[]) {
+      const baseWhere = {
+        disabled: false,
+        emailReminders: true,
+        leagues: { some: { leagueId } },
+        ...(alreadySentIds.length > 0 && { id: { notIn: alreadySentIds } }),
+      };
 
-    if (!reminderOnlyUnsubmitted) {
+      if (!reminderOnlyUnsubmitted) {
+        return prisma.user.findMany({
+          where: baseWhere,
+          select: { id: true, email: true, alias: true, name: true },
+        });
+      }
+
+      const submittedUserIds = (
+        await prisma.pickSet.findMany({
+          where: { weekId: week!.id, lockedAt: { not: null } },
+          select: { userId: true },
+        })
+      ).map((p) => p.userId);
+
       return prisma.user.findMany({
-        where: baseWhere,
+        where: {
+          ...baseWhere,
+          ...(submittedUserIds.length > 0 && {
+            id: {
+              notIn: [
+                ...(alreadySentIds.length > 0 ? alreadySentIds : []),
+                ...submittedUserIds,
+              ],
+            },
+          }),
+        },
         select: { id: true, email: true, alias: true, name: true },
       });
     }
 
-    // "Only unsubmitted" mode: exclude users who have already locked their picks
-    const submittedUserIds = (
-      await prisma.pickSet.findMany({
-        where: { weekId: week!.id, lockedAt: { not: null } },
+    // ── Helper: send to eligible users ──────────────────────────────────────────
+    async function sendToEligibleUsers(
+      type: "pre_lock_12h" | "thursday_noon",
+      buildEmail: (user: { id: string; email: string; alias: string | null; name: string | null }) => { subject: string; html: string }
+    ) {
+      const alreadySent = await prisma.notificationLog.findMany({
+        where: { weekId: week!.id, type },
         select: { userId: true },
-      })
-    ).map((p) => p.userId);
+      });
+      const alreadySentIds = alreadySent.map((l) => l.userId);
 
-    return prisma.user.findMany({
-      where: {
-        ...baseWhere,
-        ...(submittedUserIds.length > 0 && {
-          id: {
-            notIn: [
-              ...(alreadySentIds.length > 0 ? alreadySentIds : []),
-              ...submittedUserIds,
-            ],
-          },
-        }),
-      },
-      select: { id: true, email: true, alias: true, name: true },
-    });
-  }
+      const users = await getEligibleUsers(alreadySentIds);
 
-  // ── Helper: send to eligible users ────────────────────────────────────────────
-  async function sendToEligibleUsers(
-    type: "pre_lock_12h" | "thursday_noon",
-    buildEmail: (user: { id: string; email: string; alias: string | null; name: string | null }) => { subject: string; html: string }
-  ) {
-    // Find user IDs already notified for this week+type
-    const alreadySent = await prisma.notificationLog.findMany({
-      where: { weekId: week!.id, type },
-      select: { userId: true },
-    });
-    const alreadySentIds = alreadySent.map((l) => l.userId);
+      let sent = 0;
+      let errors = 0;
 
-    const users = await getEligibleUsers(alreadySentIds);
+      for (const user of users) {
+        try {
+          const { subject, html } = buildEmail(user);
+          await sendEmail({ to: user.email, subject, html });
+          await prisma.notificationLog.create({
+            data: { userId: user.id, weekId: week!.id, type },
+          });
+          sent++;
+        } catch (err) {
+          console.error(`[send-reminders] Failed to send ${type} to ${user.email}:`, err);
+          errors++;
+        }
+      }
 
-    let sent = 0;
-    let errors = 0;
+      results.push({ leagueId, type, sent, errors });
+    }
 
-    for (const user of users) {
-      try {
-        const { subject, html } = buildEmail(user);
-        await sendEmail({ to: user.email, subject, html });
-        await prisma.notificationLog.create({
-          data: { userId: user.id, weekId: week!.id, type },
+    // ── Trigger 1: Pre-lock 12h ─────────────────────────────────────────────────
+    if (week.lockAt) {
+      const preLockTime = new Date(week.lockAt.getTime() - 12 * 60 * 60 * 1000);
+      const windowEnd = new Date(preLockTime.getTime() + 20 * 60 * 1000);
+      if (now >= preLockTime && now <= windowEnd) {
+        await sendToEligibleUsers("pre_lock_12h", (user) => {
+          const userName = user.alias ?? user.name ?? user.email;
+          return preLockTemplate({
+            userName,
+            weekLabel: week.label,
+            seasonYear: week.season.year,
+            lockAt: week.lockAt!,
+            appUrl,
+            games: week.games.map((g) => ({
+              homeTeam: g.homeTeam.name,
+              awayTeam: g.awayTeam.name,
+              gameTime: g.gameTime,
+            })),
+          });
         });
-        sent++;
-      } catch (err) {
-        // Per-user failure should not abort remaining sends
-        console.error(`[send-reminders] Failed to send ${type} to ${user.email}:`, err);
-        errors++;
       }
     }
 
-    results.push({ type, sent, errors });
-  }
+    // ── Trigger 2: Admin-configured weekly scheduled reminder ───────────────────
+    const targetMinuteMs =
+      new Date(
+        Date.UTC(
+          now.getUTCFullYear(),
+          now.getUTCMonth(),
+          now.getUTCDate(),
+          reminderHourUtc,
+          reminderMinuteUtc,
+          0
+        )
+      ).getTime();
+    const windowEndMs = targetMinuteMs + 20 * 60 * 1000;
 
-  // ── Trigger 1: Pre-lock 12h ───────────────────────────────────────────────────
-  if (week.lockAt) {
-    const preLockTime = new Date(week.lockAt.getTime() - 12 * 60 * 60 * 1000);
-    const windowEnd = new Date(preLockTime.getTime() + 20 * 60 * 1000); // 20-min window
-    if (now >= preLockTime && now <= windowEnd) {
-      await sendToEligibleUsers("pre_lock_12h", (user) => {
+    if (
+      now.getUTCDay() === reminderDayOfWeek &&
+      now.getTime() >= targetMinuteMs &&
+      now.getTime() <= windowEndMs
+    ) {
+      await sendToEligibleUsers("thursday_noon", (user) => {
         const userName = user.alias ?? user.name ?? user.email;
-        return preLockTemplate({
+        return thursdayTemplate({
           userName,
           weekLabel: week.label,
           seasonYear: week.season.year,
-          lockAt: week.lockAt!,
           appUrl,
-          games: week.games.map((g) => ({
-            homeTeam: g.homeTeam.name,
-            awayTeam: g.awayTeam.name,
-            gameTime: g.gameTime,
-          })),
         });
       });
     }
-  }
-
-  // ── Trigger 2: Admin-configured weekly scheduled reminder ─────────────────────
-  // Check: correct day-of-week, correct hour, and within the 20-min window after
-  // the configured minute (cron fires every 15 min so this always catches one slot).
-  const targetMinuteMs =
-    new Date(
-      Date.UTC(
-        now.getUTCFullYear(),
-        now.getUTCMonth(),
-        now.getUTCDate(),
-        reminderHourUtc,
-        reminderMinuteUtc,
-        0
-      )
-    ).getTime();
-  const windowEndMs = targetMinuteMs + 20 * 60 * 1000;
-
-  if (
-    now.getUTCDay() === reminderDayOfWeek &&
-    now.getTime() >= targetMinuteMs &&
-    now.getTime() <= windowEndMs
-  ) {
-    await sendToEligibleUsers("thursday_noon", (user) => {
-      const userName = user.alias ?? user.name ?? user.email;
-      return thursdayTemplate({
-        userName,
-        weekLabel: week.label,
-        seasonYear: week.season.year,
-        appUrl,
-      });
-    });
   }
 
   return NextResponse.json({ results });

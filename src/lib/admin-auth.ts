@@ -29,13 +29,16 @@ export function clearAdminSessionCookie(): string {
 
 type AdminRole = "superadmin" | "admin" | null;
 
+export type AdminSession =
+  | { role: "superadmin"; leagueId: null; adminName: "superadmin" }
+  | { role: "admin"; leagueId: string; adminId: string; adminName: string }
+  | null;
+
 /**
- * Returns the role of the current admin session:
- *   "superadmin" – env-var credentials (or legacy "admin:authenticated" cookie)
- *   "admin"      – a DB-backed AdminUser account
- *   null         – unauthenticated or invalid session
+ * Verify the admin cookie and extract the token.
+ * Returns { token } on success, or null.
  */
-export async function getAdminRole(): Promise<AdminRole> {
+async function extractAdminToken(): Promise<string | null> {
   const cookieStore = await cookies();
   const cookie = cookieStore.get(COOKIE_NAME);
   if (!cookie?.value) return null;
@@ -46,7 +49,6 @@ export async function getAdminRole(): Promise<AdminRole> {
   const token = cookie.value.slice(0, lastDot);
   const signature = cookie.value.slice(lastDot + 1);
 
-  // Verify HMAC signature — proves the cookie was issued by this server
   const expected = sign(token);
   try {
     const valid = timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
@@ -55,22 +57,50 @@ export async function getAdminRole(): Promise<AdminRole> {
     return null;
   }
 
-  // Superadmin token (also accept legacy "admin:authenticated" for existing sessions)
+  return token;
+}
+
+/**
+ * Returns the full admin session including leagueId:
+ *   superadmin → { role: "superadmin", leagueId: null, adminName: "superadmin" }
+ *   DB admin  → { role: "admin", leagueId, adminId, adminName }
+ *   invalid   → null
+ */
+export async function getAdminSession(): Promise<AdminSession> {
+  const token = await extractAdminToken();
+  if (!token) return null;
+
   if (token === "admin:superadmin" || token === "admin:authenticated") {
-    return "superadmin";
+    return { role: "superadmin", leagueId: null, adminName: "superadmin" };
   }
 
-  // DB admin token: "admin:user:{adminId}"
   if (token.startsWith("admin:user:")) {
     const adminId = token.slice("admin:user:".length);
     const adminUser = await prisma.adminUser.findUnique({
       where: { id: adminId },
-      select: { id: true },
+      select: { id: true, username: true, leagueId: true },
     });
-    return adminUser ? "admin" : null;
+    if (!adminUser) return null;
+    return {
+      role: "admin",
+      leagueId: adminUser.leagueId,
+      adminId: adminUser.id,
+      adminName: adminUser.username,
+    };
   }
 
   return null;
+}
+
+/**
+ * Returns the role of the current admin session:
+ *   "superadmin" – env-var credentials (or legacy "admin:authenticated" cookie)
+ *   "admin"      – a DB-backed AdminUser account
+ *   null         – unauthenticated or invalid session
+ */
+export async function getAdminRole(): Promise<AdminRole> {
+  const session = await getAdminSession();
+  return session?.role ?? null;
 }
 
 /** Returns true if the request has any valid admin session (superadmin or DB admin). */
@@ -90,36 +120,6 @@ export async function verifyIsSuperAdmin(): Promise<boolean> {
  *   null if not authenticated
  */
 export async function getAdminName(): Promise<string | null> {
-  const cookieStore = await cookies();
-  const cookie = cookieStore.get(COOKIE_NAME);
-  if (!cookie?.value) return null;
-
-  const lastDot = cookie.value.lastIndexOf(".");
-  if (lastDot === -1) return null;
-
-  const token = cookie.value.slice(0, lastDot);
-  const signature = cookie.value.slice(lastDot + 1);
-
-  const expected = sign(token);
-  try {
-    const valid = timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
-    if (!valid) return null;
-  } catch {
-    return null;
-  }
-
-  if (token === "admin:superadmin" || token === "admin:authenticated") {
-    return "superadmin";
-  }
-
-  if (token.startsWith("admin:user:")) {
-    const adminId = token.slice("admin:user:".length);
-    const adminUser = await prisma.adminUser.findUnique({
-      where: { id: adminId },
-      select: { username: true },
-    });
-    return adminUser?.username ?? null;
-  }
-
-  return null;
+  const session = await getAdminSession();
+  return session?.adminName ?? null;
 }

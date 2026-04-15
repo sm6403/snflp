@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { verifyAdminSession, getAdminName } from "@/lib/admin-auth";
+import { verifyAdminSession, getAdminName, getAdminSession } from "@/lib/admin-auth";
+import { getAdminLeagueId } from "@/lib/league-context";
 import { logAdminAction } from "@/lib/admin-log";
 
 export async function GET() {
@@ -9,7 +10,13 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const adminSession = await getAdminSession();
+  const leagueId = adminSession?.role === "admin"
+    ? await getAdminLeagueId(adminSession)
+    : null;
+
   const users = await prisma.user.findMany({
+    where: leagueId ? { userLeagues: { some: { leagueId } } } : undefined,
     select: {
       id: true,
       name: true,
@@ -20,6 +27,9 @@ export async function GET() {
       showOnLeaderboard: true,
       lastLoginAt: true,
       createdAt: true,
+      userLeagues: {
+        select: { league: { select: { id: true, name: true } } },
+      },
     },
     orderBy: { createdAt: "desc" },
   });
@@ -51,6 +61,9 @@ export async function POST(request: Request) {
 
   const hashedPassword = await bcrypt.hash(password, 10);
 
+  const postAdminSession = await getAdminSession();
+  const postLeagueId = await getAdminLeagueId(postAdminSession);
+
   const user = await prisma.user.create({
     data: {
       name,
@@ -61,6 +74,12 @@ export async function POST(request: Request) {
     },
     select: { id: true, name: true, email: true, disabled: true, lastLoginAt: true, createdAt: true },
   });
+
+  if (postLeagueId) {
+    await prisma.userLeague.create({
+      data: { userId: user.id, leagueId: postLeagueId },
+    });
+  }
 
   const adminName = await getAdminName() ?? "unknown";
   await logAdminAction(adminName, "CREATE_USER", { email: user.email, name: user.name });

@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyAdminSession, getAdminName } from "@/lib/admin-auth";
+import { verifyAdminSession, getAdminName, getAdminSession } from "@/lib/admin-auth";
 import { logAdminAction } from "@/lib/admin-log";
 import { getCurrentWeek } from "@/lib/nfl-data";
+import { getAdminLeagueId } from "@/lib/league-context";
 
 export async function GET(request: Request) {
-  if (!(await verifyAdminSession())) {
+  const adminSession = await getAdminSession();
+  if (!adminSession) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const leagueId = await getAdminLeagueId(adminSession);
+  if (!leagueId) {
+    return NextResponse.json({ error: "No league context" }, { status: 400 });
   }
 
   const { searchParams } = new URL(request.url);
@@ -19,7 +26,7 @@ export async function GET(request: Request) {
       include: { season: true },
     });
   } else {
-    week = await getCurrentWeek();
+    week = await getCurrentWeek(leagueId);
   }
 
   if (!week) {
@@ -50,7 +57,10 @@ export async function GET(request: Request) {
       orderBy: { submittedAt: "desc" },
     }),
     prisma.user.findMany({
-      where: { showOnLeaderboard: true },
+      where: {
+        showOnLeaderboard: true,
+        ...(leagueId ? { userLeagues: { some: { leagueId } } } : {}),
+      },
       select: { id: true, name: true, email: true, alias: true, favoriteTeam: true },
       orderBy: { alias: "asc" },
     }),
@@ -78,8 +88,9 @@ export async function GET(request: Request) {
     orderBy: [{ gameTime: "asc" }, { id: "asc" }],
   });
 
-  // All weeks for the selector dropdown
+  // All weeks for the selector dropdown — scope to admin's league
   const weeks = await prisma.week.findMany({
+    where: leagueId ? { season: { leagueId } } : undefined,
     orderBy: [{ season: { year: "desc" } }, { number: "asc" }],
     include: { season: { select: { id: true, year: true } } },
   });

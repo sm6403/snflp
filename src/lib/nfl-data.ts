@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/prisma";
 
-export async function getCurrentWeek() {
-  const settings = await prisma.appSettings.findFirst();
+export async function getCurrentWeek(leagueId: string) {
+  const settings = await prisma.leagueSettings.findUnique({
+    where: { leagueId },
+  });
 
   if (settings?.mode === "test" && settings.testWeekId) {
     return prisma.week.findUnique({
@@ -11,7 +13,7 @@ export async function getCurrentWeek() {
   }
 
   return prisma.week.findFirst({
-    where: { isCurrent: true },
+    where: { isCurrent: true, season: { leagueId, isCurrent: true } },
     include: { season: true },
   });
 }

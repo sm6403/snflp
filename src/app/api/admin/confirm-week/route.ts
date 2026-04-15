@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyAdminSession, getAdminName } from "@/lib/admin-auth";
+import { verifyAdminSession, getAdminName, getAdminSession } from "@/lib/admin-auth";
 import { logAdminAction } from "@/lib/admin-log";
+import { getAdminLeagueId } from "@/lib/league-context";
 
 // POST /api/admin/confirm-week
 // Bulk-grades all picks for the week, stamps Week.confirmedAt, and
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
       games: {
         select: { id: true, homeTeamId: true, awayTeamId: true, winnerId: true, isTie: true },
       },
-      season: { select: { id: true, ruleFavouriteTeamBonusWin: true, ruleLMS: true, ruleLMSRound: true } },
+      season: { select: { id: true, leagueId: true, ruleFavouriteTeamBonusWin: true, ruleLMS: true, ruleLMSRound: true } },
     },
   });
   if (!week) {
@@ -224,8 +225,14 @@ export async function POST(request: Request) {
 
     // Auto-eliminate eligible users who didn't submit an LMS pick this week,
     // unless they were already eliminated earlier in THIS round.
+    // Scope to the league that owns this season.
+    const adminSess = await getAdminSession();
+    const lmsLeagueId = await getAdminLeagueId(adminSess) ?? week.season.leagueId;
     const eligibleUsers = await prisma.user.findMany({
-      where: { showOnLeaderboard: true },
+      where: {
+        showOnLeaderboard: true,
+        userLeagues: { some: { leagueId: lmsLeagueId } },
+      },
       select: { id: true },
     });
 

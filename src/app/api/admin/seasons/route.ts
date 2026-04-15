@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyAdminSession } from "@/lib/admin-auth";
+import { verifyAdminSession, getAdminSession } from "@/lib/admin-auth";
+import { getAdminLeagueId } from "@/lib/league-context";
 
 // GET /api/admin/seasons
 // Returns all seasons with week counts and per-week game counts.
@@ -9,8 +10,12 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const adminSession = await getAdminSession();
+  const leagueId = await getAdminLeagueId(adminSession);
+
   const [seasons, eligibleUsersCount] = await Promise.all([
     prisma.season.findMany({
+      where: leagueId ? { leagueId } : undefined,
       orderBy: [{ year: "desc" }, { type: "asc" }],
       select: {
         id: true, year: true, type: true, mode: true,
@@ -38,7 +43,11 @@ export async function GET() {
         },
       },
     }),
-    prisma.user.count({ where: { showOnLeaderboard: true } }),
+    prisma.user.count({
+      where: leagueId
+        ? { showOnLeaderboard: true, userLeagues: { some: { leagueId } } }
+        : { showOnLeaderboard: true },
+    }),
   ]);
 
   // ── LMS per-week stats ────────────────────────────────────────────────────
@@ -149,8 +158,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "parentSeasonId required for postseason" }, { status: 400 });
   }
 
+  const adminSession = await getAdminSession();
+  const leagueId = await getAdminLeagueId(adminSession);
+  if (!leagueId) {
+    return NextResponse.json({ error: "No league context" }, { status: 400 });
+  }
+
   // Check for duplicate
-  const existing = await prisma.season.findUnique({ where: { year_type: { year, type } } });
+  const existing = await prisma.season.findUnique({ where: { year_type_leagueId: { year, type, leagueId } } });
   if (existing) {
     return NextResponse.json(
       { error: `A ${type} season for ${year} already exists` },
@@ -180,6 +195,7 @@ export async function POST(request: Request) {
         year,
         type,
         mode,
+        leagueId,
         parentSeasonId: parentSeasonId ?? null,
         isCurrent: false,
         weeks: {

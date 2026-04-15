@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getAdminRole, verifyAdminSession } from "@/lib/admin-auth";
+import { getAdminRole, verifyAdminSession, getAdminSession } from "@/lib/admin-auth";
+import { getAdminLeagueId } from "@/lib/league-context";
 import { sendEmail } from "@/lib/email";
 import { thursdayTemplate } from "@/lib/email-templates";
 
@@ -11,10 +12,14 @@ export async function GET() {
   }
 
   const isSuperAdmin = role === "superadmin";
-  const settings = await prisma.appSettings.findFirst();
-  // Settings page uses seasons for the test-week selector — return all seasons
-  // ordered by year desc, type asc so regular comes before postseason per year
+  const adminSession = await getAdminSession();
+  const leagueId = await getAdminLeagueId(adminSession);
+  const settings = leagueId
+    ? await prisma.leagueSettings.findUnique({ where: { leagueId } })
+    : null;
+  // Settings page uses seasons for the test-week selector — scope to admin's league when present
   const seasons = await prisma.season.findMany({
+    where: leagueId ? { leagueId } : undefined,
     orderBy: [{ year: "desc" }, { type: "asc" }],
     include: {
       weeks: {
@@ -24,7 +29,7 @@ export async function GET() {
     },
   });
 
-  return NextResponse.json({ settings, seasons, isSuperAdmin });
+  return NextResponse.json({ settings, seasons, isSuperAdmin, leagueId });
 }
 
 export async function PATCH(request: Request) {
@@ -52,8 +57,12 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
     }
     const appUrl = (process.env.APP_URL ?? "").replace(/\/$/, "");
+    const adminSessForEmail = await getAdminSession();
+    const leagueIdForEmail = await getAdminLeagueId(adminSessForEmail);
     const week = await prisma.week.findFirst({
-      where: { isCurrent: true },
+      where: leagueIdForEmail
+        ? { isCurrent: true, season: { leagueId: leagueIdForEmail } }
+        : { isCurrent: true },
       include: { season: { select: { year: true } } },
     });
     const { subject, html } = thursdayTemplate({
@@ -86,10 +95,16 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "reminderMinuteUtc must be 0–59" }, { status: 400 });
   }
 
-  const settings = await prisma.appSettings.upsert({
-    where: { id: "singleton" },
+  const adminSession = await getAdminSession();
+  const leagueId = await getAdminLeagueId(adminSession);
+  if (!leagueId) {
+    return NextResponse.json({ error: "No league context" }, { status: 400 });
+  }
+
+  const settings = await prisma.leagueSettings.upsert({
+    where: { leagueId },
     create: {
-      id: "singleton",
+      leagueId,
       mode: body.mode ?? "live",
       testSeasonId: body.testSeasonId ?? null,
       testWeekId: body.testWeekId ?? null,

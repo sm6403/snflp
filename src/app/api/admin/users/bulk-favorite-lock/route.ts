@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyAdminSession } from "@/lib/admin-auth";
+import { verifyAdminSession, getAdminSession } from "@/lib/admin-auth";
+import { getAdminLeagueId } from "@/lib/league-context";
 
 // PATCH /api/admin/users/bulk-favorite-lock
-// Sets favoriteTeamLocked for ALL regular users at once.
+// Sets favoriteTeamLocked for all regular users in the admin's league.
 export async function PATCH(request: Request) {
   if (!(await verifyAdminSession())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -14,7 +15,11 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "locked must be a boolean" }, { status: 400 });
   }
 
+  const adminSession = await getAdminSession();
+  const leagueId = await getAdminLeagueId(adminSession);
+
   const { count } = await prisma.user.updateMany({
+    where: leagueId ? { userLeagues: { some: { leagueId } } } : undefined,
     data: { favoriteTeamLocked: body.locked },
   });
 

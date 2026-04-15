@@ -14,7 +14,7 @@ export async function PATCH(
   }
 
   const { adminId } = await params;
-  const body = await request.json() as { password?: string; disabled?: boolean };
+  const body = await request.json() as { password?: string; disabled?: boolean; leagueId?: string };
 
   const admin = await prisma.adminUser.findUnique({ where: { id: adminId } });
   if (!admin) {
@@ -23,12 +23,27 @@ export async function PATCH(
 
   const caller = await getAdminName();
 
+  // Assign / change league
+  if (body.leagueId !== undefined) {
+    const league = await prisma.league.findUnique({ where: { id: body.leagueId } });
+    if (!league) {
+      return NextResponse.json({ error: "League not found" }, { status: 404 });
+    }
+    const updated = await prisma.adminUser.update({
+      where: { id: adminId },
+      data: { leagueId: body.leagueId },
+      select: { id: true, username: true, disabled: true, createdAt: true, lastLoginAt: true, leagueId: true, league: { select: { id: true, name: true } } },
+    });
+    await logAdminAction(caller ?? "superadmin", "ASSIGN_ADMIN_LEAGUE", { username: admin.username, leagueName: league.name });
+    return NextResponse.json({ admin: updated });
+  }
+
   // Toggle disabled status
   if (typeof body.disabled === "boolean") {
     const updated = await prisma.adminUser.update({
       where: { id: adminId },
       data: { disabled: body.disabled },
-      select: { id: true, username: true, disabled: true, createdAt: true, lastLoginAt: true },
+      select: { id: true, username: true, disabled: true, createdAt: true, lastLoginAt: true, leagueId: true, league: { select: { id: true, name: true } } },
     });
     await logAdminAction(caller ?? "superadmin", body.disabled ? "DISABLE_ADMIN" : "ENABLE_ADMIN", { username: admin.username });
     return NextResponse.json({ admin: updated });

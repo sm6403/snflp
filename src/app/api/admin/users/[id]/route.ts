@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { verifyAdminSession, getAdminName } from "@/lib/admin-auth";
+import { verifyAdminSession, getAdminName, getAdminSession } from "@/lib/admin-auth";
+import { getAdminLeagueId } from "@/lib/league-context";
 import { logAdminAction } from "@/lib/admin-log";
 import { NFL_TEAMS } from "@/lib/nfl-teams";
 
@@ -26,6 +27,16 @@ export async function GET(
   }
 
   const { id } = await params;
+
+  const getAdminSess = await getAdminSession();
+  const getLeagueId = await getAdminLeagueId(getAdminSess);
+  if (getLeagueId) {
+    const membership = await prisma.userLeague.findUnique({
+      where: { userId_leagueId: { userId: id, leagueId: getLeagueId } },
+    });
+    if (!membership) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
   const user = await prisma.user.findUnique({ where: { id }, select: USER_SELECT });
 
   if (!user) {
@@ -33,8 +44,9 @@ export async function GET(
   }
 
   // Include division context for the current active season (if it uses divisions)
+  // Scope to admin's league so we don't leak divisions from other leagues
   const currentSeason = await prisma.season.findFirst({
-    where: { isCurrent: true },
+    where: getLeagueId ? { isCurrent: true, leagueId: getLeagueId } : { isCurrent: true },
     select: {
       id: true,
       year: true,
@@ -75,6 +87,15 @@ export async function DELETE(
 
   const { id } = await params;
 
+  const delAdminSess = await getAdminSession();
+  const delLeagueId = await getAdminLeagueId(delAdminSess);
+  if (delLeagueId) {
+    const membership = await prisma.userLeague.findUnique({
+      where: { userId_leagueId: { userId: id, leagueId: delLeagueId } },
+    });
+    if (!membership) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
   const user = await prisma.user.findUnique({ where: { id } });
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -111,6 +132,16 @@ export async function PATCH(
   }
 
   const { id } = await params;
+
+  const patchAdminSess = await getAdminSession();
+  const patchLeagueId = await getAdminLeagueId(patchAdminSess);
+  if (patchLeagueId) {
+    const membership = await prisma.userLeague.findUnique({
+      where: { userId_leagueId: { userId: id, leagueId: patchLeagueId } },
+    });
+    if (!membership) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
   const body = await request.json();
   const data: Record<string, unknown> = {};
 

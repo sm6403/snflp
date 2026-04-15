@@ -11,7 +11,7 @@ export async function GET() {
   }
 
   const admins = await prisma.adminUser.findMany({
-    select: { id: true, username: true, disabled: true, createdAt: true, lastLoginAt: true },
+    select: { id: true, username: true, disabled: true, createdAt: true, lastLoginAt: true, leagueId: true, league: { select: { id: true, name: true } } },
     orderBy: { createdAt: "asc" },
   });
 
@@ -24,10 +24,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { username, password } = await request.json() as { username: string; password: string };
+  const { username, password, leagueId } = await request.json() as { username: string; password: string; leagueId: string };
 
   if (!username?.trim()) {
     return NextResponse.json({ error: "Username is required" }, { status: 400 });
+  }
+  if (!leagueId?.trim()) {
+    return NextResponse.json({ error: "leagueId is required" }, { status: 400 });
   }
   if (!password || password.length < 8) {
     return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
@@ -40,7 +43,7 @@ export async function POST(request: Request) {
 
   const hashedPassword = await bcrypt.hash(password, 12);
   const admin = await prisma.adminUser.create({
-    data: { username: username.trim(), hashedPassword },
+    data: { username: username.trim(), hashedPassword, leagueId: leagueId.trim() },
     select: { id: true, username: true, disabled: true, createdAt: true, lastLoginAt: true },
   });
 

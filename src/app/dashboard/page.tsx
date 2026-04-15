@@ -4,9 +4,11 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { SignOutButton } from "@/components/sign-out-button";
 import { FavoriteTeamPicker } from "@/components/favorite-team-picker";
+import { JoinLeagueForm } from "@/components/join-league-form";
 import { WeekHistory } from "@/components/week-history";
 import { UserNav } from "@/components/user-nav";
 import { getCurrentWeek } from "@/lib/nfl-data";
+import { resolveUserLeagueId } from "@/lib/league-context";
 import { SeasonInfoPanel } from "@/components/season-info-panel";
 
 // Force fresh DB read on every request so admin lock/unlock changes
@@ -20,13 +22,42 @@ export default async function DashboardPage() {
     redirect("/signin");
   }
 
-  const [user, currentWeek] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { favoriteTeam: true, favoriteTeamLocked: true, alias: true },
-    }),
-    getCurrentWeek(),
-  ]);
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { favoriteTeam: true, favoriteTeamLocked: true, alias: true },
+  });
+
+  const leagueId = await resolveUserLeagueId(session.user.id);
+
+  if (!leagueId) {
+    return (
+      <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-zinc-950">
+        <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+            <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">SNFLP</h1>
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-zinc-600 dark:text-zinc-400">{session.user.email}</span>
+              <SignOutButton />
+            </div>
+          </div>
+        </header>
+        <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10 space-y-8">
+          <div>
+            <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
+              Welcome{session.user.name ? `, ${session.user.name}` : ""}!
+            </h2>
+            <p className="mt-2 text-zinc-600 dark:text-zinc-400">
+              Join a league to start making your picks.
+            </p>
+          </div>
+          <JoinLeagueForm />
+          <FavoriteTeamPicker initialTeam={user?.favoriteTeam ?? "Los Angeles Rams"} initialLocked={user?.favoriteTeamLocked ?? false} />
+        </main>
+      </div>
+    );
+  }
+
+  const currentWeek = await getCurrentWeek(leagueId);
 
   // Fetch the user's pick set for the current week (for status pill)
   const currentPickSet = currentWeek
@@ -128,7 +159,7 @@ export default async function DashboardPage() {
             <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
               SNFLP
             </h1>
-            <UserNav active="dashboard" />
+            <UserNav active="dashboard" activeLeagueId={leagueId} />
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-zinc-600 dark:text-zinc-400">

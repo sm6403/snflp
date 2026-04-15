@@ -18,6 +18,7 @@ interface User {
   showOnLeaderboard: boolean;
   lastLoginAt: string | null;
   createdAt: string;
+  userLeagues?: Array<{ league: { id: string; name: string } }>;
 }
 
 interface AdminAccount {
@@ -26,20 +27,30 @@ interface AdminAccount {
   disabled: boolean;
   createdAt: string;
   lastLoginAt: string | null;
+  leagueId: string;
+  league: { id: string; name: string } | null;
+}
+
+interface LeagueOption {
+  id: string;
+  name: string;
 }
 
 // ─── Admin Accounts section (superadmin only) ────────────────────────────────
 
 function AdminAccountsSection() {
   const [admins, setAdmins] = useState<AdminAccount[]>([]);
+  const [leagues, setLeagues] = useState<LeagueOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [selectedLeagueId, setSelectedLeagueId] = useState("");
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [assigningLeagueId, setAssigningLeagueId] = useState<string | null>(null);
   // Change password state
   const [changePwId, setChangePwId] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
@@ -48,10 +59,17 @@ function AdminAccountsSection() {
   const [changePwSuccess, setChangePwSuccess] = useState<string | null>(null);
 
   const fetchAdmins = useCallback(async () => {
-    const res = await fetch("/api/admin/admins");
-    if (res.ok) {
-      const data = await res.json();
+    const [adminsRes, leaguesRes] = await Promise.all([
+      fetch("/api/admin/admins"),
+      fetch("/api/admin/leagues"),
+    ]);
+    if (adminsRes.ok) {
+      const data = await adminsRes.json();
       setAdmins(data.admins ?? []);
+    }
+    if (leaguesRes.ok) {
+      const data = await leaguesRes.json();
+      setLeagues((data.leagues ?? []).map((l: { id: string; name: string }) => ({ id: l.id, name: l.name })));
     }
     setLoading(false);
   }, []);
@@ -66,7 +84,7 @@ function AdminAccountsSection() {
       const res = await fetch("/api/admin/admins", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, leagueId: selectedLeagueId }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -74,6 +92,7 @@ function AdminAccountsSection() {
       } else {
         setUsername("");
         setPassword("");
+        setSelectedLeagueId("");
         setShowForm(false);
         fetchAdmins();
       }
@@ -108,6 +127,23 @@ function AdminAccountsSection() {
       }
     } finally {
       setTogglingId(null);
+    }
+  }
+
+  async function handleAssignLeague(adminId: string, leagueId: string) {
+    setAssigningLeagueId(adminId);
+    try {
+      const res = await fetch(`/api/admin/admins/${adminId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leagueId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAdmins((prev) => prev.map((a) => a.id === adminId ? { ...a, leagueId: data.admin.leagueId, league: data.admin.league } : a));
+      }
+    } finally {
+      setAssigningLeagueId(null);
     }
   }
 
@@ -186,6 +222,20 @@ function AdminAccountsSection() {
                   className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
                 />
               </div>
+              <div className="flex-1 min-w-40">
+                <label className="mb-1 block text-xs font-medium text-zinc-400">League</label>
+                <select
+                  value={selectedLeagueId}
+                  onChange={(e) => setSelectedLeagueId(e.target.value)}
+                  required
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="">Select a league…</option>
+                  {leagues.map((l) => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             {error && <p className="text-sm text-red-400">{error}</p>}
             <div className="flex gap-3 pt-1">
@@ -198,7 +248,7 @@ function AdminAccountsSection() {
               </button>
               <button
                 type="button"
-                onClick={() => { setShowForm(false); setError(null); setUsername(""); setPassword(""); }}
+                onClick={() => { setShowForm(false); setError(null); setUsername(""); setPassword(""); setSelectedLeagueId(""); }}
                 className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-400 hover:bg-zinc-700"
               >
                 Cancel
@@ -218,6 +268,7 @@ function AdminAccountsSection() {
             <thead className="bg-zinc-800/50 text-zinc-400">
               <tr>
                 <th className="px-4 py-3 font-medium">Username</th>
+                <th className="px-4 py-3 font-medium">League</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Created</th>
                 <th className="px-4 py-3 font-medium">Last Login</th>
@@ -229,6 +280,19 @@ function AdminAccountsSection() {
                 <React.Fragment key={admin.id}>
                   <tr className="text-zinc-300">
                     <td className="px-4 py-3 font-medium text-zinc-100">{admin.username}</td>
+                    <td className="px-4 py-3">
+                      <select
+                        value={admin.leagueId ?? ""}
+                        onChange={(e) => handleAssignLeague(admin.id, e.target.value)}
+                        disabled={assigningLeagueId === admin.id}
+                        className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100 focus:border-indigo-500 focus:outline-none disabled:opacity-40"
+                      >
+                        <option value="" disabled>No league</option>
+                        {leagues.map((l) => (
+                          <option key={l.id} value={l.id}>{l.name}</option>
+                        ))}
+                      </select>
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
                         admin.disabled
@@ -282,7 +346,7 @@ function AdminAccountsSection() {
                   </tr>
                   {changePwId === admin.id && (
                     <tr className="bg-zinc-800/40">
-                      <td colSpan={4} className="px-4 py-3">
+                      <td colSpan={6} className="px-4 py-3">
                         <div className="flex flex-wrap items-center gap-3">
                           <span className="text-xs text-zinc-400">New password for <span className="font-semibold text-zinc-200">{admin.username}</span>:</span>
                           <input
@@ -325,6 +389,13 @@ function AdminAccountsSection() {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+interface JoinRequest {
+  id: string;
+  userId: string;
+  user: { name: string | null; email: string };
+  createdAt: string;
+}
+
 export function AdminDashboardContent() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -332,6 +403,15 @@ export function AdminDashboardContent() {
   const [togglingLeaderboard, setTogglingLeaderboard] = useState<string | null>(null);
   const [deletingUser, setDeletingUser] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  // Invite code & join requests
+  const [leagueId, setLeagueId] = useState<string | null>(null);
+  const [leagueInviteCode, setLeagueInviteCode] = useState<string | null>(null);
+  const [requireApproval, setRequireApproval] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
+  const [togglingApproval, setTogglingApproval] = useState(false);
+  const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([]);
+  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
 
   const fetchUsers = useCallback(async () => {
     const res = await fetch("/api/admin/users");
@@ -342,14 +422,80 @@ export function AdminDashboardContent() {
     setLoading(false);
   }, []);
 
+  const fetchLeagueData = useCallback(async () => {
+    const res = await fetch("/api/admin/leagues");
+    if (res.ok) {
+      const data = await res.json();
+      const leagues = data.leagues ?? [];
+      if (leagues.length > 0) {
+        setLeagueId(leagues[0].id);
+        setLeagueInviteCode(leagues[0].inviteCode ?? null);
+        setRequireApproval(leagues[0].requireApproval ?? false);
+      }
+    }
+  }, []);
+
+  const fetchJoinRequests = useCallback(async () => {
+    const res = await fetch("/api/admin/join-requests");
+    if (res.ok) {
+      const data = await res.json();
+      setJoinRequests(data.requests ?? []);
+    }
+  }, []);
+
   useEffect(() => {
     fetchUsers();
+    fetchLeagueData();
+    fetchJoinRequests();
     // Check if current session is superadmin
     fetch("/api/admin/settings")
       .then((r) => r.json())
       .then((d) => setIsSuperAdmin(d.isSuperAdmin ?? false))
       .catch(() => {});
-  }, [fetchUsers]);
+  }, [fetchUsers, fetchLeagueData, fetchJoinRequests]);
+
+  async function copyCode() {
+    if (!leagueInviteCode) return;
+    try {
+      await navigator.clipboard.writeText(leagueInviteCode);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    } catch { /* ignore */ }
+  }
+
+  async function handleToggleApproval() {
+    if (!leagueId) return;
+    setTogglingApproval(true);
+    try {
+      const res = await fetch(`/api/admin/leagues/${leagueId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requireApproval: !requireApproval }),
+      });
+      if (res.ok) {
+        setRequireApproval(!requireApproval);
+      }
+    } finally {
+      setTogglingApproval(false);
+    }
+  }
+
+  async function handleJoinRequest(requestId: string, action: "approve" | "reject") {
+    setProcessingRequestId(requestId);
+    try {
+      const res = await fetch(`/api/admin/join-requests/${requestId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      if (res.ok) {
+        setJoinRequests((prev) => prev.filter((r) => r.id !== requestId));
+        if (action === "approve") fetchUsers();
+      }
+    } finally {
+      setProcessingRequestId(null);
+    }
+  }
 
   async function handleDeleteUser(userId: string) {
     setDeletingUser(userId);
@@ -396,6 +542,78 @@ export function AdminDashboardContent() {
           <AdminCreateUser onCreated={fetchUsers} />
         </div>
 
+        {/* League Invite Code (regular admins only — superadmin manages via Leagues page) */}
+        {leagueInviteCode && !isSuperAdmin && (
+          <div className="mb-6 rounded-lg border border-zinc-800 bg-zinc-800/60 p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-zinc-400">League Invite Code</h3>
+                <p className="mt-1 font-mono text-2xl font-bold tracking-widest text-zinc-100">{leagueInviteCode}</p>
+              </div>
+              <button
+                onClick={copyCode}
+                className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-700"
+              >
+                {codeCopied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+            <div className="mt-3 flex items-center gap-3">
+              <label className="text-xs text-zinc-400">Require approval for new members</label>
+              <button
+                onClick={handleToggleApproval}
+                disabled={togglingApproval}
+                title={requireApproval ? "Approval required — click to allow instant join" : "Instant join — click to require approval"}
+                className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                  requireApproval ? "bg-indigo-600" : "bg-zinc-600"
+                }`}
+              >
+                <span
+                  className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                    requireApproval ? "translate-x-4" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Pending Join Requests (regular admins only) */}
+        {joinRequests.length > 0 && !isSuperAdmin && (
+          <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 p-5">
+            <h3 className="text-sm font-semibold text-amber-300">
+              Pending Join Requests ({joinRequests.length})
+            </h3>
+            <div className="mt-3 space-y-2">
+              {joinRequests.map((req) => (
+                <div key={req.id} className="flex items-center justify-between rounded-md bg-zinc-800/60 px-4 py-2">
+                  <div>
+                    <span className="text-sm font-medium text-zinc-200">{req.user.name || req.user.email}</span>
+                    {req.user.name && (
+                      <span className="ml-2 text-xs text-zinc-500">{req.user.email}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleJoinRequest(req.id, "approve")}
+                      disabled={processingRequestId === req.id}
+                      className="rounded-md bg-green-600/20 px-3 py-1 text-xs font-medium text-green-400 transition-colors hover:bg-green-600/30 disabled:opacity-40"
+                    >
+                      {processingRequestId === req.id ? "..." : "Approve"}
+                    </button>
+                    <button
+                      onClick={() => handleJoinRequest(req.id, "reject")}
+                      disabled={processingRequestId === req.id}
+                      className="rounded-md bg-red-600/20 px-3 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-600/30 disabled:opacity-40"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <p className="text-zinc-400">Loading...</p>
         ) : users.length === 0 ? (
@@ -412,7 +630,7 @@ export function AdminDashboardContent() {
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Leaderboard</th>
                   <th className="px-4 py-3 font-medium">Last Login</th>
-                  <th className="px-4 py-3 font-medium">Created</th>
+                  {isSuperAdmin && <th className="px-4 py-3 font-medium">League</th>}
                   <th className="px-4 py-3 font-medium">Actions</th>
                 </tr>
               </thead>
@@ -464,9 +682,13 @@ export function AdminDashboardContent() {
                         ? new Date(user.lastLoginAt).toLocaleString()
                         : "Never"}
                     </td>
-                    <td className="px-4 py-3 text-zinc-500">
-                      {new Date(user.createdAt).toLocaleDateString()}
-                    </td>
+                    {isSuperAdmin && (
+                      <td className="px-4 py-3 text-zinc-400">
+                        {user.userLeagues && user.userLeagues.length > 0
+                          ? user.userLeagues.map((ul) => ul.league.name).join(", ")
+                          : <span className="text-zinc-600 italic">None</span>}
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
                         <AdminToggleButton

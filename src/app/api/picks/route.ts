@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getCurrentWeek, getGamesForWeek } from "@/lib/nfl-data";
+import { resolveUserLeagueId } from "@/lib/league-context";
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -13,6 +14,9 @@ export async function GET(request: Request) {
   const weekIdParam = searchParams.get("weekId");
   const userIdParam = searchParams.get("userId");
 
+  const leagueId = await resolveUserLeagueId(session.user.id);
+  if (!leagueId) return NextResponse.json({ error: "No league context" }, { status: 400 });
+
   let week;
   if (weekIdParam) {
     week = await prisma.week.findUnique({
@@ -20,7 +24,7 @@ export async function GET(request: Request) {
       include: { season: true },
     });
   } else {
-    week = await getCurrentWeek();
+    week = await getCurrentWeek(leagueId);
   }
 
   if (!week) {
@@ -222,6 +226,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const leagueId = await resolveUserLeagueId(session.user.id);
+  if (!leagueId) return NextResponse.json({ error: "No league context" }, { status: 400 });
+
   const { picks, lmsTeamId } = await request.json() as {
     picks: Array<{ gameId: string; pickedTeamId: string }>;
     lmsTeamId?: string;
@@ -231,7 +238,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No picks provided" }, { status: 400 });
   }
 
-  const week = await getCurrentWeek();
+  const week = await getCurrentWeek(leagueId);
   if (!week) {
     return NextResponse.json({ error: "No active week found" }, { status: 404 });
   }

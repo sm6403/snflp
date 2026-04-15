@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getCurrentWeek } from "@/lib/nfl-data";
+import { resolveUserLeagueId } from "@/lib/league-context";
 
 // GET /api/picks/season
 // Returns all weeks of the current season with the user's pick scores per week.
@@ -12,13 +13,16 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const season = await prisma.season.findFirst({ where: { isCurrent: true } });
+  const leagueId = await resolveUserLeagueId(session.user.id);
+  if (!leagueId) return NextResponse.json({ season: null, weeks: [], currentWeekId: null });
+
+  const season = await prisma.season.findFirst({ where: { isCurrent: true, leagueId } });
   if (!season) {
     return NextResponse.json({ season: null, weeks: [], currentWeekId: null });
   }
 
   // Resolve the actual "current" week (respects test mode vs live mode)
-  const currentWeek = await getCurrentWeek();
+  const currentWeek = await getCurrentWeek(leagueId);
   const currentWeekId = currentWeek?.id ?? null;
 
   // Fetch all weeks for this season, ordered 1→18
