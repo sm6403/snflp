@@ -80,14 +80,16 @@ export async function getAdminLeagueId(
 
 // ─── Cookie helpers ──────────────────────────────────────────────────────────
 
+const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+
 export function setUserLeagueCookie(leagueId: string): string {
-  return `${USER_LEAGUE_COOKIE}=${leagueId}; Path=/; SameSite=Lax; Max-Age=31536000`;
+  return `${USER_LEAGUE_COOKIE}=${leagueId}; Path=/; SameSite=Lax; Max-Age=31536000${secure}`;
 }
 
 export function clearUserLeagueCookie(): string {
-  return `${USER_LEAGUE_COOKIE}=; Path=/; SameSite=Lax; Max-Age=0`;
+  return `${USER_LEAGUE_COOKIE}=; Path=/; SameSite=Lax; Max-Age=0${secure}`;
 }
 
 export function setAdminLeagueCookie(leagueId: string): string {
-  return `${ADMIN_LEAGUE_COOKIE}=${leagueId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`;
+  return `${ADMIN_LEAGUE_COOKIE}=${leagueId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400${secure}`;
 }

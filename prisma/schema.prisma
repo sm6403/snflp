@@ -101,6 +101,8 @@ model AdminUser {
   hashedPassword String
   disabled       Boolean   @default(false)
   leagueId       String
+  loginAttempts  Int       @default(0)
+  lockedUntil    DateTime?
   createdAt      DateTime  @default(now())
   lastLoginAt    DateTime?
 

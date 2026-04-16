@@ -16,15 +16,17 @@ function sign(value: string): string {
  * Creates the Set-Cookie header value for an admin session.
  * Pass adminId for a DB admin user, omit for the superadmin.
  */
+const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+
 export function createAdminSessionCookie(adminId?: string): string {
   const token = adminId ? `admin:user:${adminId}` : "admin:superadmin";
   const signature = sign(token);
   const cookieValue = `${token}.${signature}`;
-  return `${COOKIE_NAME}=${cookieValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`;
+  return `${COOKIE_NAME}=${cookieValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400${secure}`;
 }
 
 export function clearAdminSessionCookie(): string {
-  return `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+  return `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
 }
 
 type AdminRole = "superadmin" | "admin" | null;

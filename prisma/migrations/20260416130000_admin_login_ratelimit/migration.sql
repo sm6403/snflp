@@ -1,0 +1,2 @@
+ALTER TABLE "AdminUser" ADD COLUMN "loginAttempts" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "AdminUser" ADD COLUMN "lockedUntil"   TIMESTAMP(3);

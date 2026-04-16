@@ -29,15 +29,16 @@ export async function PATCH(request: Request) {
 
   // Set or clear the team_theme cookie — the layout reads this server-side
   // to apply data-team-theme on <html> with zero client-side flash.
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   if (teamTheme) {
     response.headers.set(
       "Set-Cookie",
-      `team_theme=${teamTheme}; Path=/; SameSite=Lax; Max-Age=${60 * 60 * 24 * 365}`
+      `team_theme=${teamTheme}; Path=/; SameSite=Lax; Max-Age=${60 * 60 * 24 * 365}${secure}`
     );
   } else {
     response.headers.set(
       "Set-Cookie",
-      `team_theme=; Path=/; SameSite=Lax; Max-Age=0`
+      `team_theme=; Path=/; SameSite=Lax; Max-Age=0${secure}`
     );
   }
 
