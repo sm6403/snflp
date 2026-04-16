@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { PositionCharts } from "@/components/position-charts";
+import { ExpandedStats, type ExpandedStatsData } from "@/components/expanded-stats";
 
 interface SeasonStats {
   totalCorrect: number;
@@ -35,6 +36,18 @@ export function SeasonInfoPanel({
   ruleLMS,
 }: Props) {
   const [tab, setTab] = useState<"stats" | "rules">("stats");
+  const [expandedStats, setExpandedStats] = useState<ExpandedStatsData | null>(null);
+  const [expandedLoading, setExpandedLoading] = useState(false);
+
+  useEffect(() => {
+    if (!hasAnyStats) return;
+    setExpandedLoading(true);
+    fetch("/api/stats/season")
+      .then((r) => r.json())
+      .then((data) => setExpandedStats(data ?? null))
+      .catch(() => setExpandedStats(null))
+      .finally(() => setExpandedLoading(false));
+  }, [hasAnyStats]);
 
   const activeRuleCount = [timedAutolocking, ruleFavouriteTeamBonusWin, ruleLMS].filter(Boolean).length;
 
@@ -152,6 +165,21 @@ export function SeasonInfoPanel({
                   · {stats.totalGraded} pick{stats.totalGraded !== 1 ? "s" : ""} graded
                 </p>
                 <PositionCharts />
+
+                {/* ── Expanded stats ── */}
+                {expandedLoading && (
+                  <div className="mt-6 space-y-3">
+                    {[1, 2, 3].map((i) => (
+                      <div
+                        key={i}
+                        className="h-24 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800"
+                      />
+                    ))}
+                  </div>
+                )}
+                {!expandedLoading && expandedStats && (
+                  <ExpandedStats data={expandedStats} />
+                )}
               </>
             )}
           </>
