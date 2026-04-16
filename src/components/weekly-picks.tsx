@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface TeamRecord {
   wins: number;
@@ -297,6 +297,13 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
   const [isViewingOther, setIsViewingOther] = useState(false);
   const [viewingUser, setViewingUser] = useState<{ alias: string | null; name: string | null } | null>(null);
   const [timedAutolocking, setTimedAutolocking] = useState(false);
+  const [autoLockMode, setAutoLockMode] = useState<string>("off");
+  const [autoLockTimes, setAutoLockTimes] = useState<{
+    earlyLockTime: string | null;
+    mainLockTime: string | null;
+    earlyGameIds: string[];
+    mainGameIds: string[];
+  } | null>(null);
   const [teamForm, setTeamForm] = useState<Record<string, FormEntry[]>>({});
   const [ruleFavouriteTeamBonusWin, setRuleFavouriteTeamBonusWin] = useState(false);
   const [favoriteTeamId, setFavoriteTeamId] = useState<string | null>(null);
@@ -347,6 +354,8 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
       setIsViewingOther(!!data.isViewingOther);
       setViewingUser(data.viewingUser ?? null);
       setTimedAutolocking(!!data.timedAutolocking);
+      setAutoLockMode(data.autoLockMode ?? "off");
+      setAutoLockTimes(data.autoLockTimes ?? null);
       setTeamForm(data.teamForm ?? {});
       setRuleFavouriteTeamBonusWin(!!data.ruleFavouriteTeamBonusWin);
       setFavoriteTeamId(data.favoriteTeamId ?? null);
@@ -432,6 +441,16 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
   const pickableGames = games.filter((g) => !g.isTimeLocked);
   const allPicked = pickableGames.length > 0 && pickableGames.every((g) => !!selections[g.id]);
   const weekLockedNoSubmission = week?.lockedForSubmission && !pickSet;
+
+  // Live clock for auto-lock countdown
+  const [now, setNow] = useState(() => new Date());
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (autoLockMode !== "off" && autoLockTimes) {
+      timerRef.current = setInterval(() => setNow(new Date()), 1000);
+      return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    }
+  }, [autoLockMode, autoLockTimes]);
 
   const gradedPicks = pickSet?.picks.filter((p) => p.isCorrect !== null) ?? [];
   const correctCount = gradedPicks.filter((p) => p.isCorrect === true).length;
@@ -607,6 +626,51 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
             <p className="text-sm text-red-400">{error}</p>
           </div>
         )}
+
+        {/* ── AUTO-LOCK COUNTDOWN BANNER ── */}
+        {autoLockMode !== "off" && autoLockTimes && !week?.lockedForSubmission && !isHistorical && !isViewingOther && (() => {
+          const countdown = (iso: string | null) => {
+            if (!iso) return null;
+            const diff = new Date(iso).getTime() - now.getTime();
+            if (diff <= 0) return "now";
+            const h = Math.floor(diff / 3_600_000);
+            const m = Math.floor((diff % 3_600_000) / 60_000);
+            const s = Math.floor((diff % 60_000) / 1000);
+            if (h > 0) return `${h}h ${m}m`;
+            if (m > 0) return `${m}m ${s}s`;
+            return `${s}s`;
+          };
+
+          const earlyCountdown = countdown(autoLockTimes.earlyLockTime);
+          const mainCountdown = countdown(autoLockTimes.mainLockTime);
+          const earlyPast = autoLockTimes.earlyLockTime && new Date(autoLockTimes.earlyLockTime) <= now;
+          const mainPast = autoLockTimes.mainLockTime && new Date(autoLockTimes.mainLockTime) <= now;
+
+          if (mainPast) return null; // all locked, banner not useful
+
+          return (
+            <div className="mb-4 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-2.5">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                {autoLockMode === "thursday_split" && earlyCountdown && !earlyPast && (
+                  <span className="text-amber-400">
+                    <span className="font-medium">Thursday lock:</span> {earlyCountdown}
+                  </span>
+                )}
+                {autoLockMode === "thursday_split" && earlyPast && !mainPast && (
+                  <span className="text-zinc-500">Thursday picks locked</span>
+                )}
+                {mainCountdown && !mainPast && (
+                  <span className="text-amber-400">
+                    <span className="font-medium">
+                      {autoLockMode === "all_before_first" ? "All picks lock in" : "Remaining picks lock in"}:
+                    </span>{" "}
+                    {mainCountdown}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── GAME CARDS ── */}
         <div className={compact ? "space-y-1.5" : "space-y-4"}>
@@ -882,9 +946,9 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
         {/* Submit */}
         {!isHistorical && !isViewingOther && !isLocked && !weekLockedNoSubmission && (
           <div className="mt-8 flex flex-col items-center gap-2">
-            {timedAutolocking && timeLockedGames.length > 0 && (
+            {timeLockedGames.length > 0 && (
               <p className="text-xs text-amber-500">
-                {timeLockedGames.length} game{timeLockedGames.length !== 1 ? "s have" : " has"} already started and cannot be picked.
+                {timeLockedGames.length} game{timeLockedGames.length !== 1 ? "s" : ""} locked and cannot be picked.
               </p>
             )}
             <button

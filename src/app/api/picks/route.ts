@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getCurrentWeek, getGamesForWeek } from "@/lib/nfl-data";
 import { resolveUserLeagueId } from "@/lib/league-context";
+import { computeAutoLockState, type AutoLockMode } from "@/lib/auto-lock-utils";
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -67,7 +68,22 @@ export async function GET(request: Request) {
   const ruleLMS = season?.ruleLMS ?? false;
   const ruleLMSRound = season?.ruleLMSRound ?? 1;
 
-  // Compute per-game isTimeLocked: locked when gameTime ≤ 1 min from now
+  // Fetch league auto-lock settings
+  const leagueSettings = await prisma.leagueSettings.findUnique({
+    where: { leagueId },
+    select: { autoLockMode: true },
+  });
+  const autoLockMode = (leagueSettings?.autoLockMode ?? "off") as AutoLockMode;
+
+  // Compute auto-lock times for frontend countdown
+  const autoLockTimes = autoLockMode !== "off"
+    ? computeAutoLockState(
+        games.map((g) => ({ id: g.id, gameTime: g.gameTime })),
+        autoLockMode
+      )
+    : null;
+
+  // Compute per-game isTimeLocked: locked when gameTime ≤ 1 min from now, or Game.lockedAt is set
   const now = new Date();
   const gamesForResponse = week.confirmedAt
     ? games
@@ -75,9 +91,11 @@ export async function GET(request: Request) {
         ...g,
         winner: null,
         winnerId: null,
-        isTimeLocked: timedAutolocking
-          ? g.gameTime != null && new Date(g.gameTime).getTime() - now.getTime() < 60_000
-          : false,
+        isTimeLocked:
+          // Existing: season-level timed autolocking (60s buffer)
+          (timedAutolocking && g.gameTime != null && new Date(g.gameTime).getTime() - now.getTime() < 60_000)
+          // New: persistent per-game lock (set by cron or admin)
+          || (g.lockedAt != null),
       }));
 
   const pickSet = await prisma.pickSet.findUnique({
@@ -217,6 +235,15 @@ export async function GET(request: Request) {
     allTeams: ruleLMS ? allTeams : undefined,
     teamForm,
     ruleLMSRound,
+    autoLockMode,
+    autoLockTimes: autoLockTimes
+      ? {
+          earlyLockTime: autoLockTimes.earlyLockTime?.toISOString() ?? null,
+          mainLockTime: autoLockTimes.mainLockTime?.toISOString() ?? null,
+          earlyGameIds: autoLockTimes.earlyGameIds,
+          mainGameIds: autoLockTimes.mainGameIds,
+        }
+      : null,
   });
 }
 
@@ -272,7 +299,7 @@ export async function POST(request: Request) {
   const games = await getGamesForWeek(week.id);
   const postNow = new Date();
 
-  // Determine which games are time-locked
+  // Determine which games are time-locked (season flag OR persistent Game.lockedAt)
   const timeLockedGameIds = timedAutolock
     ? new Set(
         games
@@ -281,10 +308,16 @@ export async function POST(request: Request) {
       )
     : new Set<string>();
 
+  // Also include games locked by auto-lock cron or admin manual button
+  for (const g of games) {
+    if (g.lockedAt) timeLockedGameIds.add(g.id);
+  }
+
   const pickableGames = games.filter((g) => !timeLockedGameIds.has(g.id));
 
-  // When timed autolocking: only require picks for non-locked games
-  if (!timedAutolock && picks.length !== games.length) {
+  // When any games are locked (timed autolock or Game.lockedAt): only require picks for non-locked games
+  const hasLockedGames = timeLockedGameIds.size > 0;
+  if (!hasLockedGames && picks.length !== games.length) {
     return NextResponse.json(
       { error: `Expected ${games.length} picks, got ${picks.length}` },
       { status: 400 }
@@ -311,8 +344,8 @@ export async function POST(request: Request) {
     }
   }
 
-  // When timed autolocking, require picks for all non-locked games
-  if (timedAutolock && picks.length !== pickableGames.length) {
+  // When some games are locked, require picks for all non-locked games
+  if (hasLockedGames && picks.length !== pickableGames.length) {
     return NextResponse.json(
       { error: `Expected ${pickableGames.length} picks (excluding ${timeLockedGameIds.size} locked games), got ${picks.length}` },
       { status: 400 }
@@ -348,8 +381,8 @@ export async function POST(request: Request) {
       })),
     });
 
-    // If timed autolocking: insert null picks for locked games not yet recorded
-    if (timedAutolock && timeLockedGameIds.size > 0) {
+    // Insert null picks for locked games not yet recorded (timed autolock or Game.lockedAt)
+    if (hasLockedGames) {
       const existingLockedPicks = await tx.pick.findMany({
         where: { pickSetId: ps.id, gameId: { in: [...timeLockedGameIds] } },
         select: { gameId: true },

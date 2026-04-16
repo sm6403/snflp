@@ -16,6 +16,7 @@ interface Game {
   homeTeam: Team;
   awayTeam: Team;
   gameTime: string | null;
+  lockedAt: string | null;
   winner: Team | null;
   isTie: boolean;
 }
@@ -1200,6 +1201,85 @@ export function AdminPicksContent() {
     setWeek((w) => w ? { ...w, lockAt: newLockAt } : w);
   }
 
+  const [gameLockLoading, setGameLockLoading] = useState(false);
+  const [gameLockMsg, setGameLockMsg] = useState<string | null>(null);
+
+  async function handleLockThursday() {
+    if (!week) return;
+    setGameLockLoading(true);
+    setGameLockMsg(null);
+    try {
+      const res = await fetch("/api/admin/picks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "lockThursdayGames", weekId: week.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setGameLockMsg(`Locked ${data.locked} Thursday game${data.locked !== 1 ? "s" : ""}.`);
+        refresh();
+      } else {
+        setGameLockMsg(data.error ?? "Failed");
+      }
+    } catch {
+      setGameLockMsg("Network error");
+    } finally {
+      setGameLockLoading(false);
+      setTimeout(() => setGameLockMsg(null), 4000);
+    }
+  }
+
+  async function handleLockAllGames() {
+    if (!week) return;
+    setGameLockLoading(true);
+    setGameLockMsg(null);
+    try {
+      const res = await fetch("/api/admin/picks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "lockAllGames", weekId: week.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setGameLockMsg(`Locked ${data.locked} game${data.locked !== 1 ? "s" : ""}. Week locked.`);
+        setWeek(data.week);
+        refresh();
+      } else {
+        setGameLockMsg(data.error ?? "Failed");
+      }
+    } catch {
+      setGameLockMsg("Network error");
+    } finally {
+      setGameLockLoading(false);
+      setTimeout(() => setGameLockMsg(null), 4000);
+    }
+  }
+
+  async function handleUnlockGames() {
+    if (!week) return;
+    setGameLockLoading(true);
+    setGameLockMsg(null);
+    try {
+      const res = await fetch("/api/admin/picks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "unlockGames", weekId: week.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setGameLockMsg(`Unlocked ${data.unlocked} game${data.unlocked !== 1 ? "s" : ""}.`);
+        refresh();
+      } else {
+        setGameLockMsg(data.error ?? "Failed");
+      }
+    } catch {
+      setGameLockMsg("Network error");
+    } finally {
+      setGameLockLoading(false);
+      setTimeout(() => setGameLockMsg(null), 4000);
+    }
+  }
+
   const refresh = (advancedToWeekId?: string) => {
     if (advancedToWeekId) {
       handleWeekChange(advancedToWeekId);
@@ -1303,6 +1383,46 @@ export function AdminPicksContent() {
                 lockedForSubmission={week.lockedForSubmission}
                 onUpdate={handleLockAtUpdate}
               />
+
+              {/* Game-level lock buttons */}
+              {!week.lockedForSubmission && games.length > 0 && (
+                <div className="mt-3 border-t border-zinc-700/50 pt-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                    Game-Level Locking
+                  </p>
+                  <p className="mb-2 text-xs text-zinc-600">
+                    Lock individual game slots manually. {games.filter((g: Game) => g.lockedAt).length} of {games.length} games currently locked.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={handleLockThursday}
+                      disabled={gameLockLoading}
+                      className="rounded-lg bg-amber-600/20 px-3 py-1.5 text-sm font-medium text-amber-400 transition-colors hover:bg-amber-600/30 disabled:opacity-50"
+                    >
+                      {gameLockLoading ? "..." : "Lock Thursday Night"}
+                    </button>
+                    <button
+                      onClick={handleLockAllGames}
+                      disabled={gameLockLoading}
+                      className="rounded-lg bg-red-600/20 px-3 py-1.5 text-sm font-medium text-red-400 transition-colors hover:bg-red-600/30 disabled:opacity-50"
+                    >
+                      {gameLockLoading ? "..." : "Lock All Games"}
+                    </button>
+                    {games.some((g: Game) => g.lockedAt) && (
+                      <button
+                        onClick={handleUnlockGames}
+                        disabled={gameLockLoading}
+                        className="rounded-lg bg-zinc-700/50 px-3 py-1.5 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-700 disabled:opacity-50"
+                      >
+                        {gameLockLoading ? "..." : "Unlock All Games"}
+                      </button>
+                    )}
+                  </div>
+                  {gameLockMsg && (
+                    <p className="mt-2 text-xs text-green-400">{gameLockMsg}</p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Confirm Results (only when week is locked) */}
