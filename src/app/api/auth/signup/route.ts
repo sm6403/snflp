@@ -29,13 +29,10 @@ export async function POST(request: Request) {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Check if any league requires new accounts to start disabled.
-    // Admins can toggle this in the Settings panel; disabled accounts must be
-    // manually enabled by an admin before the user can log in.
-    const disabledSetting = await prisma.leagueSettings.findFirst({
-      where: { newUsersStartDisabled: true },
-    });
-    const startDisabled = !!disabledSetting;
+    // Check global setting — superadmin can require new accounts to start disabled.
+    // When enabled, accounts must be manually activated before the user can log in.
+    const globalSettings = await prisma.globalSettings.findUnique({ where: { id: "global" } });
+    const startDisabled = globalSettings?.newUsersStartDisabled ?? false;
 
     const user = await prisma.user.create({
       data: { name, email, hashedPassword, alias: name ?? null, disabled: startDisabled },

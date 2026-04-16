@@ -60,7 +60,6 @@ model LeagueSettings {
   reminderHourUtc         Int     @default(12)
   reminderMinuteUtc       Int     @default(0)
   reminderOnlyUnsubmitted Boolean @default(false)
-  newUsersStartDisabled   Boolean @default(false)
   autoResultsEnabled      Boolean @default(false)
   autoResultsDayOfWeek    Int     @default(2)
   autoResultsHourUtc      Int     @default(12)
@@ -93,6 +92,11 @@ model User {
   divisionMemberships UserDivision[]
   userLeagues       UserLeague[]
   joinRequests      LeagueJoinRequest[]
+}
+
+model GlobalSettings {
+  id                    String  @id @default("global")
+  newUsersStartDisabled Boolean @default(false)
 }
 
 model AdminUser {

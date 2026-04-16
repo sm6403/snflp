@@ -17,6 +17,9 @@ export async function GET() {
   const settings = leagueId
     ? await prisma.leagueSettings.findUnique({ where: { leagueId } })
     : null;
+  const globalSettings = isSuperAdmin
+    ? await prisma.globalSettings.findUnique({ where: { id: "global" } })
+    : null;
   // Settings page uses seasons for the test-week selector — scope to admin's league when present
   const seasons = await prisma.season.findMany({
     where: leagueId ? { leagueId } : undefined,
@@ -29,7 +32,7 @@ export async function GET() {
     },
   });
 
-  return NextResponse.json({ settings, seasons, isSuperAdmin, leagueId });
+  return NextResponse.json({ settings, seasons, isSuperAdmin, leagueId, globalSettings });
 }
 
 export async function PATCH(request: Request) {
@@ -46,7 +49,7 @@ export async function PATCH(request: Request) {
     reminderHourUtc?: number;
     reminderMinuteUtc?: number;
     reminderOnlyUnsubmitted?: boolean;
-    newUsersStartDisabled?: boolean;
+    newUsersStartDisabled?: boolean;  // superadmin-only; goes to GlobalSettings, not LeagueSettings
     autoResultsEnabled?: boolean;
     autoResultsDayOfWeek?: number;
     autoResultsHourUtc?: number;
@@ -110,6 +113,21 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "autoResultsMinuteUtc must be 0–59" }, { status: 400 });
   }
 
+  // ── Global settings (superadmin only) ────────────────────────────────────────
+  if (body.newUsersStartDisabled !== undefined) {
+    const patchRole = await getAdminRole();
+    if (patchRole !== "superadmin") {
+      return NextResponse.json({ error: "Only superadmin can change this setting" }, { status: 403 });
+    }
+    await prisma.globalSettings.upsert({
+      where: { id: "global" },
+      create: { id: "global", newUsersStartDisabled: body.newUsersStartDisabled },
+      update: { newUsersStartDisabled: body.newUsersStartDisabled },
+    });
+    const updatedGlobal = await prisma.globalSettings.findUnique({ where: { id: "global" } });
+    return NextResponse.json({ globalSettings: updatedGlobal });
+  }
+
   const adminSession = await getAdminSession();
   const leagueId = await getAdminLeagueId(adminSession);
   if (!leagueId) {
@@ -128,7 +146,6 @@ export async function PATCH(request: Request) {
       reminderHourUtc: body.reminderHourUtc ?? 12,
       reminderMinuteUtc: body.reminderMinuteUtc ?? 0,
       reminderOnlyUnsubmitted: body.reminderOnlyUnsubmitted ?? false,
-      newUsersStartDisabled: body.newUsersStartDisabled ?? false,
       autoResultsEnabled: body.autoResultsEnabled ?? false,
       autoResultsDayOfWeek: body.autoResultsDayOfWeek ?? 2,
       autoResultsHourUtc: body.autoResultsHourUtc ?? 12,
@@ -144,7 +161,6 @@ export async function PATCH(request: Request) {
       ...(body.reminderHourUtc !== undefined && { reminderHourUtc: body.reminderHourUtc }),
       ...(body.reminderMinuteUtc !== undefined && { reminderMinuteUtc: body.reminderMinuteUtc }),
       ...(body.reminderOnlyUnsubmitted !== undefined && { reminderOnlyUnsubmitted: body.reminderOnlyUnsubmitted }),
-      ...(body.newUsersStartDisabled !== undefined && { newUsersStartDisabled: body.newUsersStartDisabled }),
       ...(body.autoResultsEnabled !== undefined && { autoResultsEnabled: body.autoResultsEnabled }),
       ...(body.autoResultsDayOfWeek !== undefined && { autoResultsDayOfWeek: body.autoResultsDayOfWeek }),
       ...(body.autoResultsHourUtc !== undefined && { autoResultsHourUtc: body.autoResultsHourUtc }),

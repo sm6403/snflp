@@ -11,12 +11,16 @@ interface AppSettings {
   reminderHourUtc: number;
   reminderMinuteUtc: number;
   reminderOnlyUnsubmitted: boolean;
-  newUsersStartDisabled: boolean;
   autoResultsEnabled: boolean;
   autoResultsDayOfWeek: number;
   autoResultsHourUtc: number;
   autoResultsMinuteUtc: number;
   autoResultsAdvanceWeek: boolean;
+}
+
+interface GlobalSettings {
+  id: string;
+  newUsersStartDisabled: boolean;
 }
 
 type BulkLockState = "idle" | "locking" | "unlocking";
@@ -130,6 +134,7 @@ function AdminPasswordSection({ isSuperAdmin }: { isSuperAdmin: boolean }) {
 
 export function AdminSettingsContent() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -158,6 +163,7 @@ export function AdminSettingsContent() {
     if (res.ok) {
       const data = await res.json();
       setSettings(data.settings);
+      setGlobalSettings(data.globalSettings ?? null);
       setIsSuperAdmin(data.isSuperAdmin ?? false);
       // Seed local schedule draft from DB values
       if (data.settings) {
@@ -277,10 +283,30 @@ export function AdminSettingsContent() {
   }
 
   async function handleNewUsersDisabledToggle() {
-    if (!settings || saving) return;
-    const newVal = !settings.newUsersStartDisabled;
-    setSettings((s) => s ? { ...s, newUsersStartDisabled: newVal } : s);
-    await patchSettings({ newUsersStartDisabled: newVal });
+    if (saving) return;
+    const newVal = !(globalSettings?.newUsersStartDisabled ?? false);
+    setGlobalSettings((g) => g ? { ...g, newUsersStartDisabled: newVal } : { id: "global", newUsersStartDisabled: newVal });
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newUsersStartDisabled: newVal }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Failed to save setting");
+        setGlobalSettings((g) => g ? { ...g, newUsersStartDisabled: !newVal } : g);
+      } else {
+        setGlobalSettings(data.globalSettings);
+      }
+    } catch {
+      setError("Network error — could not save setting");
+      setGlobalSettings((g) => g ? { ...g, newUsersStartDisabled: !newVal } : g);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleAutoResultsToggle() {
@@ -416,34 +442,35 @@ export function AdminSettingsContent() {
               </div>
             </div>
 
-            {/* New user registration */}
+            {/* New user registration — superadmin global setting */}
             {isSuperAdmin && (
               <div className="rounded-lg border border-zinc-800 bg-zinc-800/50 p-6">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-medium text-zinc-100">New Account Registration</h3>
                     <p className="mt-1 text-sm text-zinc-400">
-                      {settings?.newUsersStartDisabled
+                      {globalSettings?.newUsersStartDisabled
                         ? "New accounts start disabled — an admin must manually activate them before they can log in."
                         : "New accounts start active and can log in immediately after signing up."}
                     </p>
+                    <p className="mt-1 text-xs text-zinc-600">Global setting — applies to all new sign-ups across every league.</p>
                   </div>
                   <button
                     onClick={handleNewUsersDisabledToggle}
                     disabled={saving}
-                    aria-label={`${settings?.newUsersStartDisabled ? "Allow new accounts to start active" : "Require admin activation for new accounts"}`}
+                    aria-label={`${globalSettings?.newUsersStartDisabled ? "Allow new accounts to start active" : "Require admin activation for new accounts"}`}
                     className={`relative inline-flex h-7 w-14 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-                      settings?.newUsersStartDisabled ? "bg-amber-600" : "bg-zinc-600"
+                      globalSettings?.newUsersStartDisabled ? "bg-amber-600" : "bg-zinc-600"
                     }`}
                   >
                     <span
                       className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-                        settings?.newUsersStartDisabled ? "translate-x-8" : "translate-x-1"
+                        globalSettings?.newUsersStartDisabled ? "translate-x-8" : "translate-x-1"
                       }`}
                     />
                   </button>
                 </div>
-                {settings?.newUsersStartDisabled && (
+                {globalSettings?.newUsersStartDisabled && (
                   <p className="mt-3 text-xs text-amber-400/80">
                     ⚠ New sign-ups will be inactive until enabled in the Users panel.
                   </p>
