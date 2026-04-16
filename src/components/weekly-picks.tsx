@@ -53,6 +53,7 @@ interface Week {
   label: string;
   lockedForSubmission: boolean;
   confirmedAt: string | null;
+  lockAt: string | null;
   season: { year: number };
 }
 
@@ -452,6 +453,44 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
     }
   }, [autoLockMode, autoLockTimes]);
 
+  // ── Lock label (shown in header) ─────────────────────────────────────────────
+  const lockLabel: string | null = (() => {
+    if (isHistorical || isViewingOther || week?.lockedForSubmission) return null;
+    const fmt = (iso: string) =>
+      new Date(iso).toLocaleString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    // Manual scheduled lock takes highest priority
+    if (week?.lockAt && new Date(week.lockAt) > new Date()) {
+      return `Locks ${fmt(week.lockAt)}`;
+    }
+    // Auto-lock modes
+    if (autoLockMode === "thursday_split" && autoLockTimes) {
+      const earlyPast =
+        autoLockTimes.earlyLockTime && new Date(autoLockTimes.earlyLockTime) <= new Date();
+      const mainPast =
+        autoLockTimes.mainLockTime && new Date(autoLockTimes.mainLockTime) <= new Date();
+      if (!mainPast) {
+        if (!earlyPast && autoLockTimes.earlyLockTime) {
+          return `Thursday picks lock ${fmt(autoLockTimes.earlyLockTime)}`;
+        }
+        if (autoLockTimes.mainLockTime) {
+          return `Remaining picks lock ${fmt(autoLockTimes.mainLockTime)}`;
+        }
+      }
+    }
+    if (autoLockMode === "all_before_first" && autoLockTimes?.mainLockTime) {
+      if (new Date(autoLockTimes.mainLockTime) > new Date()) {
+        return `Locks ${fmt(autoLockTimes.mainLockTime)}`;
+      }
+    }
+    return null;
+  })();
+
   const gradedPicks = pickSet?.picks.filter((p) => p.isCorrect !== null) ?? [];
   const correctCount = gradedPicks.filter((p) => p.isCorrect === true).length;
   const hasResults = gradedPicks.length > 0;
@@ -507,6 +546,15 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
             <p className="text-sm text-zinc-400">
               {week.season.year} · {week.label}
             </p>
+            {lockLabel && (
+              <p className="mt-0.5 flex items-center gap-1 text-xs text-amber-400/80">
+                <svg className="h-3 w-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+                {lockLabel}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-3">
             {/* Compact toggle */}
