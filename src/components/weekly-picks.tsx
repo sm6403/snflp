@@ -36,7 +36,7 @@ interface Game {
 
 interface Pick {
   gameId: string;
-  pickedTeam: { id: string };
+  pickedTeam: { id: string } | null;
   isCorrect: boolean | null;
 }
 
@@ -730,6 +730,8 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
             const noPickResultsView = isHistorical && !userPick && !hasResult;
             const withPickResultsView = isHistorical && !userPick && hasResult;
             const gameTimeLocked = !!game.isTimeLocked;
+            // Missed pick: a pick record exists (lock created it) but no team was selected
+            const isMissedPick = !!(userPick && !userPick.pickedTeam && hasResult);
 
             // Favourite team bonus win: rule enabled, week confirmed, user picked fav team,
             // fav team played this game, fav team lost (winner is someone else)
@@ -758,18 +760,27 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
                 <div
                   key={game.id}
                   className={`rounded-lg border px-3 py-1.5 ${
-                    isFavBonusGame
+                    isMissedPick
+                      ? "border-red-900/50 bg-zinc-900"
+                      : isFavBonusGame
                       ? "border-purple-700/60 bg-zinc-900"
                       : gameTimeLocked
                       ? "border-amber-800/50 bg-zinc-900"
                       : "border-zinc-800 bg-zinc-900"
                   }`}
                 >
-                  {isFavBonusGame && (
-                    <div className="mb-1 flex justify-end">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-purple-600/20 px-2 py-0.5 text-[9px] font-semibold text-purple-400">
-                        ⭐ TEAM PICK
-                      </span>
+                  {(isFavBonusGame || isMissedPick) && (
+                    <div className="mb-1 flex justify-end gap-1.5">
+                      {isFavBonusGame && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-purple-600/20 px-2 py-0.5 text-[9px] font-semibold text-purple-400">
+                          ⭐ TEAM PICK
+                        </span>
+                      )}
+                      {isMissedPick && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-red-900/30 px-2 py-0.5 text-[9px] font-semibold text-red-400">
+                          ✗ No pick — 0 pts
+                        </span>
+                      )}
                     </div>
                   )}
                   <div className="flex items-center gap-2">
@@ -824,7 +835,9 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
               <div
                 key={game.id}
                 className={`rounded-xl border p-4 ${
-                  isFavBonusGame
+                  isMissedPick
+                    ? "border-red-900/50 bg-zinc-900"
+                    : isFavBonusGame
                     ? "border-purple-700/60 bg-zinc-900"
                     : gameTimeLocked
                     ? "border-amber-800/50 bg-zinc-900"
@@ -839,6 +852,11 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
                     {isFavBonusGame && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-purple-600/20 px-2 py-0.5 text-xs font-semibold text-purple-400">
                         ⭐ TEAM PICK
+                      </span>
+                    )}
+                    {isMissedPick && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-red-900/30 px-2 py-0.5 text-xs font-semibold text-red-400">
+                        ✗ No pick — 0 pts
                       </span>
                     )}
                     {gameTimeLocked && !isHistorical && (
