@@ -406,10 +406,13 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
   async function handleSubmit() {
     setSubmitting(true);
     setError(null);
-    const picks = Object.entries(selections).map(([gameId, pickedTeamId]) => ({
-      gameId,
-      pickedTeamId,
-    }));
+    // Exclude time-locked games from the payload — the server manages null picks
+    // for those automatically. Without this filter, favourite-team pre-selections
+    // for locked games would be included and rejected by the server.
+    const lockedGameIds = new Set(timeLockedGames.map((g) => g.id));
+    const picks = Object.entries(selections)
+      .filter(([gameId]) => !lockedGameIds.has(gameId))
+      .map(([gameId, pickedTeamId]) => ({ gameId, pickedTeamId }));
     const res = await fetch("/api/picks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
