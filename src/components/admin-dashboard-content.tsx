@@ -404,6 +404,9 @@ export function AdminDashboardContent() {
   const [deletingUser, setDeletingUser] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [disabledOpen, setDisabledOpen] = useState(false);
+  // League filter (superadmin only)
+  const [leagueFilter, setLeagueFilter] = useState<string>("all");
+  const [allLeaguesForFilter, setAllLeaguesForFilter] = useState<LeagueOption[]>([]);
 
   // Invite code & join requests
   const [leagueId, setLeagueId] = useState<string | null>(null);
@@ -433,6 +436,7 @@ export function AdminDashboardContent() {
         setLeagueInviteCode(leagues[0].inviteCode ?? null);
         setRequireApproval(leagues[0].requireApproval ?? false);
       }
+      setAllLeaguesForFilter(leagues.map((l: { id: string; name: string }) => ({ id: l.id, name: l.name })));
     }
   }, []);
 
@@ -620,9 +624,49 @@ export function AdminDashboardContent() {
           </div>
         )}
 
+        {/* League filter — superadmin only */}
+        {isSuperAdmin && allLeaguesForFilter.length > 0 && (
+          <div className="mb-5 flex flex-wrap gap-2">
+            {(["all", "unassigned", ...allLeaguesForFilter.map((l) => l.id)] as string[]).map((key) => {
+              const label =
+                key === "all" ? "All" :
+                key === "unassigned" ? "Unassigned" :
+                (allLeaguesForFilter.find((l) => l.id === key)?.name ?? key);
+              const count =
+                key === "all" ? users.length :
+                key === "unassigned" ? users.filter((u) => !u.userLeagues || u.userLeagues.length === 0).length :
+                users.filter((u) => u.userLeagues?.some((ul) => ul.league.id === key)).length;
+              const active = leagueFilter === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setLeagueFilter(key)}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    active
+                      ? "bg-indigo-600 text-white"
+                      : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
+                  }`}
+                >
+                  {label}
+                  <span className={`ml-1.5 ${active ? "text-indigo-200" : "text-zinc-600"}`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {(() => {
-          const activeUsers = users.filter((u) => !u.disabled);
-          const disabledUsers = users.filter((u) => u.disabled);
+          const filteredUsers = isSuperAdmin
+            ? leagueFilter === "all"
+              ? users
+              : leagueFilter === "unassigned"
+              ? users.filter((u) => !u.userLeagues || u.userLeagues.length === 0)
+              : users.filter((u) => u.userLeagues?.some((ul) => ul.league.id === leagueFilter))
+            : users;
+          const activeUsers = filteredUsers.filter((u) => !u.disabled);
+          const disabledUsers = filteredUsers.filter((u) => u.disabled);
 
           function renderRows(list: User[]) {
             return list.map((user) => (
