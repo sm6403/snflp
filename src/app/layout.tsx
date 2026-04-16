@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { cookies } from "next/headers";
 import { Providers } from "./providers";
 import "./globals.css";
 
@@ -18,14 +19,18 @@ export const metadata: Metadata = {
   description: "SNFLP web application",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const teamTheme = cookieStore.get("team_theme")?.value || undefined;
+
   return (
     <html
       lang="en"
+      data-team-theme={teamTheme}
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">

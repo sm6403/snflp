@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { getTeamColors } from "@/lib/nfl-team-colors";
+import { getTeamLogoUrl } from "@/lib/nfl-teams";
 
 // ─── Reusable section card ────────────────────────────────────────────────────
 
@@ -291,16 +293,154 @@ function EmailRemindersSection({ initialEmailReminders }: { initialEmailReminder
   );
 }
 
+// ─── Team colour theme section ────────────────────────────────────────────────
+
+function TeamThemeSection({
+  initialFavoriteTeam,
+  initialTeamTheme,
+}: {
+  initialFavoriteTeam: string;
+  initialTeamTheme: string | null;
+}) {
+  const colors = getTeamColors(initialFavoriteTeam);
+  const [activeTheme, setActiveTheme] = useState<string | null>(initialTeamTheme);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+
+  if (!colors) return null;
+
+  const isActive = activeTheme === colors.espnId;
+
+  async function handleSet() {
+    if (!colors) return;
+    setSaving(true);
+    setStatus(null);
+    try {
+      const res = await fetch("/api/user/team-theme", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamTheme: colors.espnId }),
+      });
+      if (res.ok) {
+        setActiveTheme(colors.espnId);
+        setStatus({ type: "success", msg: "Theme applied! Reloading…" });
+        setTimeout(() => window.location.reload(), 800);
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setStatus({ type: "error", msg: d.error ?? "Failed to apply theme." });
+      }
+    } catch {
+      setStatus({ type: "error", msg: "Network error." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleReset() {
+    setSaving(true);
+    setStatus(null);
+    try {
+      const res = await fetch("/api/user/team-theme", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamTheme: null }),
+      });
+      if (res.ok) {
+        setActiveTheme(null);
+        setStatus({ type: "success", msg: "Theme reset. Reloading…" });
+        setTimeout(() => window.location.reload(), 800);
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setStatus({ type: "error", msg: d.error ?? "Failed to reset theme." });
+      }
+    } catch {
+      setStatus({ type: "error", msg: "Network error." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <SettingsCard title="Team Colour Theme">
+      <p className="mb-4 text-sm text-zinc-400">
+        Apply your favourite team&apos;s official colours as the app accent. Affects buttons,
+        toggles, active states, and focus rings everywhere.
+      </p>
+
+      {/* Team preview */}
+      <div className="mb-4 flex items-center gap-3">
+        <img
+          src={getTeamLogoUrl(initialFavoriteTeam)}
+          alt={initialFavoriteTeam}
+          className="h-10 w-10 object-contain"
+        />
+        <div>
+          <p className="text-sm font-medium text-zinc-100">{initialFavoriteTeam}</p>
+          <div className="mt-1 flex items-center gap-2">
+            <span
+              className="h-4 w-4 rounded-full border border-zinc-600"
+              style={{ backgroundColor: colors.primary }}
+              title={colors.primary}
+            />
+            <span className="text-xs text-zinc-500">{colors.primary}</span>
+            <span
+              className="h-4 w-4 rounded-full border border-zinc-600 ml-1"
+              style={{ backgroundColor: colors.hover }}
+              title={colors.hover}
+            />
+            <span className="text-xs text-zinc-500">{colors.hover}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Active badge */}
+      {isActive && (
+        <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-green-600/20 px-3 py-1 text-xs font-medium text-green-400">
+          <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
+          Theme active
+        </div>
+      )}
+
+      {/* Action buttons */}
+      <div className="flex gap-3">
+        {!isActive ? (
+          <button
+            onClick={handleSet}
+            disabled={saving}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {saving ? "Applying…" : "Set Theme"}
+          </button>
+        ) : (
+          <button
+            onClick={handleReset}
+            disabled={saving}
+            className="rounded-lg border border-zinc-600 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {saving ? "Resetting…" : "Reset Theme"}
+          </button>
+        )}
+      </div>
+
+      {status && <StatusMsg {...status} />}
+    </SettingsCard>
+  );
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export function UserSettingsContent({
   initialAlias,
   initialEmail,
   initialEmailReminders,
+  initialFavoriteTeam,
+  initialTeamTheme,
 }: {
   initialAlias: string;
   initialEmail: string;
   initialEmailReminders: boolean;
+  initialFavoriteTeam: string;
+  initialTeamTheme: string | null;
 }) {
   return (
     <div className="space-y-4">
@@ -308,6 +448,10 @@ export function UserSettingsContent({
       <EmailSection initialEmail={initialEmail} />
       <PasswordSection />
       <EmailRemindersSection initialEmailReminders={initialEmailReminders} />
+      <TeamThemeSection
+        initialFavoriteTeam={initialFavoriteTeam}
+        initialTeamTheme={initialTeamTheme}
+      />
     </div>
   );
 }

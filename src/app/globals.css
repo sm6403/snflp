@@ -24,3 +24,47 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ── NFL team colour themes ──────────────────────────────────────────────────
+   When data-team-theme is set on <html>, override Tailwind's indigo range so
+   every bg-indigo-*, text-indigo-*, border-indigo-* utility uses team colours.
+   -------------------------------------------------------------------------- */
+[data-team-theme] {
+  --color-indigo-400: var(--theme-accent-light);
+  --color-indigo-500: var(--theme-accent-hover);
+  --color-indigo-600: var(--theme-accent);
+  --color-indigo-700: var(--theme-accent-hover);
+}
+
+[data-team-theme="ari"] { --theme-accent: #97233F; --theme-accent-hover: #7a1c33; --theme-accent-light: #c24060; }
+[data-team-theme="atl"] { --theme-accent: #A71930; --theme-accent-hover: #8a1427; --theme-accent-light: #d44050; }
+[data-team-theme="bal"] { --theme-accent: #9E7C0C; --theme-accent-hover: #7e6309; --theme-accent-light: #c9a030; }
+[data-team-theme="buf"] { --theme-accent: #00338D; --theme-accent-hover: #002a73; --theme-accent-light: #1a5abf; }
+[data-team-theme="car"] { --theme-accent: #0085CA; --theme-accent-hover: #006ba3; --theme-accent-light: #33a3e0; }
+[data-team-theme="chi"] { --theme-accent: #C83803; --theme-accent-hover: #a32e02; --theme-accent-light: #f05020; }
+[data-team-theme="cin"] { --theme-accent: #FB4F14; --theme-accent-hover: #d94010; --theme-accent-light: #fc7040; }
+[data-team-theme="cle"] { --theme-accent: #FF3C00; --theme-accent-hover: #d93200; --theme-accent-light: #ff6633; }
+[data-team-theme="dal"] { --theme-accent: #869397; --theme-accent-hover: #6b777c; --theme-accent-light: #a5b0b4; }
+[data-team-theme="den"] { --theme-accent: #FB4F14; --theme-accent-hover: #d94010; --theme-accent-light: #fc7040; }
+[data-team-theme="det"] { --theme-accent: #0076B6; --theme-accent-hover: #005f92; --theme-accent-light: #2295d4; }
+[data-team-theme="gb"]  { --theme-accent: #FFB612; --theme-accent-hover: #e09e0f; --theme-accent-light: #ffc93d; }
+[data-team-theme="hou"] { --theme-accent: #A71930; --theme-accent-hover: #8a1427; --theme-accent-light: #d44050; }
+[data-team-theme="ind"] { --theme-accent: #002C5F; --theme-accent-hover: #00234c; --theme-accent-light: #1a4f8c; }
+[data-team-theme="jax"] { --theme-accent: #D7A22A; --theme-accent-hover: #b88722; --theme-accent-light: #e8bc50; }
+[data-team-theme="kc"]  { --theme-accent: #E31837; --theme-accent-hover: #c2152e; --theme-accent-light: #f04060; }
+[data-team-theme="lv"]  { --theme-accent: #A5ACAF; --theme-accent-hover: #858d91; --theme-accent-light: #c2c8cb; }
+[data-team-theme="lac"] { --theme-accent: #0080C6; --theme-accent-hover: #0067a0; --theme-accent-light: #22a0e8; }
+[data-team-theme="lar"] { --theme-accent: #003594; --theme-accent-hover: #002a77; --theme-accent-light: #1a55c0; }
+[data-team-theme="mia"] { --theme-accent: #008E97; --theme-accent-hover: #00737a; --theme-accent-light: #00b0bb; }
+[data-team-theme="min"] { --theme-accent: #4F2683; --theme-accent-hover: #3e1c68; --theme-accent-light: #7040aa; }
+[data-team-theme="ne"]  { --theme-accent: #C60C30; --theme-accent-hover: #a00a28; --theme-accent-light: #e83050; }
+[data-team-theme="no"]  { --theme-accent: #D3BC8D; --theme-accent-hover: #b89e6e; --theme-accent-light: #e8d4a8; }
+[data-team-theme="nyg"] { --theme-accent: #0B2265; --theme-accent-hover: #081a51; --theme-accent-light: #1a3d8c; }
+[data-team-theme="nyj"] { --theme-accent: #125740; --theme-accent-hover: #0e4332; --theme-accent-light: #1a7a59; }
+[data-team-theme="phi"] { --theme-accent: #004C54; --theme-accent-hover: #003840; --theme-accent-light: #007080; }
+[data-team-theme="pit"] { --theme-accent: #FFB612; --theme-accent-hover: #e09e0f; --theme-accent-light: #ffc93d; }
+[data-team-theme="sf"]  { --theme-accent: #AA0000; --theme-accent-hover: #8c0000; --theme-accent-light: #d41010; }
+[data-team-theme="sea"] { --theme-accent: #69BE28; --theme-accent-hover: #55991f; --theme-accent-light: #88d44a; }
+[data-team-theme="tb"]  { --theme-accent: #D50A0A; --theme-accent-hover: #b20808; --theme-accent-light: #f03030; }
+[data-team-theme="ten"] { --theme-accent: #4B92DB; --theme-accent-hover: #3478bf; --theme-accent-light: #72aee8; }
+[data-team-theme="wsh"] { --theme-accent: #5A1414; --theme-accent-hover: #470f0f; --theme-accent-light: #802020; }

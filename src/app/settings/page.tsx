@@ -17,7 +17,7 @@ export default async function SettingsPage() {
   const [user, leagueId] = await Promise.all([
     prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { alias: true, email: true, name: true, emailReminders: true },
+      select: { alias: true, email: true, name: true, emailReminders: true, favoriteTeam: true, teamTheme: true },
     }),
     resolveUserLeagueId(session.user.id),
   ]);
@@ -45,6 +45,8 @@ export default async function SettingsPage() {
           initialAlias={user.alias ?? user.name ?? ""}
           initialEmail={user.email}
           initialEmailReminders={user.emailReminders}
+          initialFavoriteTeam={user.favoriteTeam}
+          initialTeamTheme={user.teamTheme}
         />
       </main>
     </div>
