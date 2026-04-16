@@ -370,7 +370,7 @@ export function WeeklyPicks({ weekId, userId }: { weekId?: string; userId?: stri
       if (data.pickSet?.picks) {
         const existing: Record<string, string> = {};
         for (const p of data.pickSet.picks) {
-          existing[p.gameId] = p.pickedTeam.id;
+          if (p.pickedTeam) existing[p.gameId] = p.pickedTeam.id;
         }
         setSelections(existing);
         setFavoriteSelections(new Set());
