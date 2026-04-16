@@ -19,7 +19,7 @@ export interface ExpandedStatsData {
   upsetAccuracy: number | null;
   upsetOpportunities: number;
   upsetCorrect: number;
-  mostPickedTeam: { name: string; abbreviation: string; espnId: string } | null;
+  mostPickedTeams: { name: string; abbreviation: string; espnId: string }[];
   mostPickedCount: number;
   mySeasonRank: number | null;
   myWeeklyRank: number | null;
@@ -226,21 +226,23 @@ export function ExpandedStats({ data }: { data: ExpandedStatsData }) {
         <Tile
           label="Most picked team"
           sub={
-            data.mostPickedTeam
-              ? `${data.mostPickedCount} pick${data.mostPickedCount !== 1 ? "s" : ""} this season`
+            data.mostPickedTeams.length > 0
+              ? `${data.mostPickedCount} pick${data.mostPickedCount !== 1 ? "s" : ""} this season${data.mostPickedTeams.length > 1 ? " (tied)" : ""}`
               : undefined
           }
         >
-          {data.mostPickedTeam ? (
-            <div className="flex items-center gap-2">
-              <img
-                src={`https://a.espncdn.com/i/teamlogos/nfl/500/${data.mostPickedTeam.espnId}.png`}
-                alt={data.mostPickedTeam.abbreviation}
-                className="h-8 w-8 object-contain"
-              />
-              <p className="text-xl font-bold text-zinc-100">
-                {data.mostPickedTeam.abbreviation}
-              </p>
+          {data.mostPickedTeams.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {data.mostPickedTeams.map((team) => (
+                <div key={team.espnId} className="flex items-center gap-1.5">
+                  <img
+                    src={`https://a.espncdn.com/i/teamlogos/nfl/500/${team.espnId}.png`}
+                    alt={team.abbreviation}
+                    className="h-8 w-8 object-contain"
+                  />
+                  <p className="text-xl font-bold text-zinc-100">{team.abbreviation}</p>
+                </div>
+              ))}
             </div>
           ) : (
             <p className="text-sm text-zinc-400">—</p>

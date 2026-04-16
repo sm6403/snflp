@@ -179,14 +179,17 @@ export async function GET() {
     }
   }
 
-  let mostPickedTeam: { name: string; abbreviation: string; espnId: string } | null = null;
   let mostPickedCount = 0;
   for (const [, v] of teamPickCounts) {
-    if (v.count > mostPickedCount) {
-      mostPickedCount = v.count;
-      mostPickedTeam = { name: v.name, abbreviation: v.abbreviation, espnId: v.espnId };
-    }
+    if (v.count > mostPickedCount) mostPickedCount = v.count;
   }
+  const mostPickedTeams =
+    mostPickedCount > 0
+      ? [...teamPickCounts.values()]
+          .filter((v) => v.count === mostPickedCount)
+          .sort((a, b) => a.abbreviation.localeCompare(b.abbreviation))
+          .map(({ name, abbreviation, espnId }) => ({ name, abbreviation, espnId }))
+      : [];
 
   // ── 7 & 8. Season rank, this-week rank, and head-to-head vs league ────────
   const [leagueUsers, allPickSets] = await Promise.all([
@@ -321,7 +324,7 @@ export async function GET() {
     upsetAccuracy,
     upsetOpportunities,
     upsetCorrect,
-    mostPickedTeam,
+    mostPickedTeams,
     mostPickedCount,
     mySeasonRank,
     myWeeklyRank,
