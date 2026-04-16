@@ -9,6 +9,7 @@ import { WeekHistory } from "@/components/week-history";
 import { UserNav } from "@/components/user-nav";
 import { getCurrentWeek } from "@/lib/nfl-data";
 import { resolveUserLeagueId } from "@/lib/league-context";
+import { computeAutoLockState } from "@/lib/auto-lock-utils";
 import { SeasonInfoPanel } from "@/components/season-info-panel";
 
 // Force fresh DB read on every request so admin lock/unlock changes
@@ -66,6 +67,59 @@ export default async function DashboardPage() {
         select: { lockedAt: true, lockedBy: true },
       })
     : null;
+
+  // ── Lock label + Thursday locked flag ────────────────────────────────────────
+  let lockLabel: string | null = null;
+  // True when some (but not all) games are locked — shown regardless of autoLockMode
+  // so it works for manual "Lock Thursday Night" button too
+  const thursdayLocked =
+    currentWeek && !currentWeek.lockedForSubmission
+      ? (await prisma.game.count({
+          where: { weekId: currentWeek.id, lockedAt: { not: null } },
+        })) > 0
+      : false;
+
+  if (currentWeek && !currentWeek.lockedForSubmission) {
+    const fmt = (d: Date) =>
+      d.toLocaleString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    const now = new Date();
+    // Manual scheduled lock takes highest priority
+    if (currentWeek.lockAt && currentWeek.lockAt > now) {
+      lockLabel = `Locks ${fmt(currentWeek.lockAt)}`;
+    } else {
+      const ls = await prisma.leagueSettings.findUnique({ where: { leagueId } });
+      const autoLockMode = ls?.autoLockMode ?? "off";
+      if (autoLockMode !== "off") {
+        const games = await prisma.game.findMany({
+          where: { weekId: currentWeek.id },
+          select: { id: true, gameTime: true },
+        });
+        const { earlyLockTime, mainLockTime } = computeAutoLockState(
+          games,
+          autoLockMode as "all_before_first" | "thursday_split"
+        );
+        if (autoLockMode === "thursday_split") {
+          const earlyPast = earlyLockTime && earlyLockTime <= now;
+          const mainPast = mainLockTime && mainLockTime <= now;
+          if (!mainPast) {
+            if (!earlyPast && earlyLockTime) {
+              lockLabel = `Thursday picks lock ${fmt(earlyLockTime)}`;
+            } else if (mainLockTime) {
+              lockLabel = `Remaining picks lock ${fmt(mainLockTime)}`;
+            }
+          }
+        } else if (autoLockMode === "all_before_first" && mainLockTime && mainLockTime > now) {
+          lockLabel = `Locks ${fmt(mainLockTime)}`;
+        }
+      }
+    }
+  }
 
   type PickStatus = "waiting" | "locked" | "unlocked" | "closed";
   let pickStatus: PickStatus = "waiting";
@@ -218,6 +272,15 @@ export default async function DashboardPage() {
                       </span>
                     )}
                   </div>
+                  {lockLabel && (
+                    <p className="mt-1.5 flex items-center gap-1 text-xs text-amber-400/80">
+                      <svg className="h-3 w-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <circle cx="12" cy="12" r="10" />
+                        <polyline points="12 6 12 12 16 14" />
+                      </svg>
+                      {lockLabel}
+                    </p>
+                  )}
                 </>
               ) : (
                 <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
@@ -226,12 +289,23 @@ export default async function DashboardPage() {
               )}
             </div>
             {currentWeek && (
-              <Link
-                href="/picks"
-                className="flex-shrink-0 rounded-lg bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-              >
-                Go to Picks
-              </Link>
+              <div className="flex flex-shrink-0 flex-col items-end gap-1.5">
+                <Link
+                  href="/picks"
+                  className="rounded-lg bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                >
+                  Go to Picks
+                </Link>
+                {thursdayLocked && (
+                  <span className="flex items-center gap-1 text-xs text-amber-400/80">
+                    <svg className="h-3 w-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                    Thursday picks locked
+                  </span>
+                )}
+              </div>
             )}
           </div>
         </div>

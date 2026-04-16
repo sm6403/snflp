@@ -55,6 +55,7 @@ export async function PATCH(request: Request) {
     autoResultsHourUtc?: number;
     autoResultsMinuteUtc?: number;
     autoResultsAdvanceWeek?: boolean;
+    autoLockMode?: string;
     action?: "testEmail";
     testEmailAddress?: string;
   };
@@ -112,6 +113,10 @@ export async function PATCH(request: Request) {
   if (body.autoResultsMinuteUtc !== undefined && (body.autoResultsMinuteUtc < 0 || body.autoResultsMinuteUtc > 59)) {
     return NextResponse.json({ error: "autoResultsMinuteUtc must be 0–59" }, { status: 400 });
   }
+  const validAutoLockModes = ["off", "all_before_first", "thursday_split"];
+  if (body.autoLockMode !== undefined && !validAutoLockModes.includes(body.autoLockMode)) {
+    return NextResponse.json({ error: "autoLockMode must be 'off', 'all_before_first', or 'thursday_split'" }, { status: 400 });
+  }
 
   // ── Global settings (superadmin only) ────────────────────────────────────────
   if (body.newUsersStartDisabled !== undefined) {
@@ -151,6 +156,7 @@ export async function PATCH(request: Request) {
       autoResultsHourUtc: body.autoResultsHourUtc ?? 12,
       autoResultsMinuteUtc: body.autoResultsMinuteUtc ?? 0,
       autoResultsAdvanceWeek: body.autoResultsAdvanceWeek ?? false,
+      autoLockMode: body.autoLockMode ?? "off",
     },
     update: {
       ...(body.mode !== undefined && { mode: body.mode }),
@@ -166,6 +172,7 @@ export async function PATCH(request: Request) {
       ...(body.autoResultsHourUtc !== undefined && { autoResultsHourUtc: body.autoResultsHourUtc }),
       ...(body.autoResultsMinuteUtc !== undefined && { autoResultsMinuteUtc: body.autoResultsMinuteUtc }),
       ...(body.autoResultsAdvanceWeek !== undefined && { autoResultsAdvanceWeek: body.autoResultsAdvanceWeek }),
+      ...(body.autoLockMode !== undefined && { autoLockMode: body.autoLockMode }),
     },
   });
 

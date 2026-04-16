@@ -4,6 +4,8 @@ import { verifyAdminSession, getAdminName, getAdminSession } from "@/lib/admin-a
 import { logAdminAction } from "@/lib/admin-log";
 import { getCurrentWeek } from "@/lib/nfl-data";
 import { getAdminLeagueId } from "@/lib/league-context";
+import { classifyGameSlots } from "@/lib/auto-lock-utils";
+import { createMissedPicksForLockedGames } from "@/lib/auto-lock-picks";
 
 export async function GET(request: Request) {
   const adminSession = await getAdminSession();
@@ -125,7 +127,7 @@ export async function PATCH(request: Request) {
   }
 
   const body = await request.json() as {
-    action: "lockWeek" | "unlockWeek" | "setLockTime" | "clearLockTime";
+    action: "lockWeek" | "unlockWeek" | "setLockTime" | "clearLockTime" | "lockThursdayGames" | "lockAllGames" | "unlockGames";
     weekId: string;
     lockAt?: string; // ISO string (UTC)
   };
@@ -199,6 +201,73 @@ export async function PATCH(request: Request) {
       seasonYear: week.season.year,
     });
     return NextResponse.json({ week });
+  }
+
+  // ── Game-level lock actions ────────────────────────────────────────────────
+
+  if (body.action === "lockThursdayGames") {
+    const games = await prisma.game.findMany({
+      where: { weekId: body.weekId },
+      select: { id: true, gameTime: true, lockedAt: true },
+    });
+    const classification = classifyGameSlots(games.map((g) => ({ id: g.id, gameTime: g.gameTime })));
+    if (classification.earlyGames.length === 0) {
+      return NextResponse.json({ error: "No early (Thursday) games detected in this week" }, { status: 400 });
+    }
+    const earlyIds = classification.earlyGames.map((g) => g.id);
+    const result = await prisma.game.updateMany({
+      where: { id: { in: earlyIds }, lockedAt: null },
+      data: { lockedAt: new Date() },
+    });
+    // Resolve league for missed picks
+    const weekForLeague = await prisma.week.findUnique({
+      where: { id: body.weekId },
+      include: { season: { select: { leagueId: true } } },
+    });
+    if (weekForLeague) {
+      await createMissedPicksForLockedGames(body.weekId, earlyIds, weekForLeague.season.leagueId);
+    }
+    await logAdminAction(adminName, "LOCK_THURSDAY_GAMES", {
+      weekId: body.weekId,
+      gamesLocked: result.count,
+      earlyGameIds: earlyIds,
+    });
+    return NextResponse.json({ locked: result.count, earlyGameIds: earlyIds });
+  }
+
+  if (body.action === "lockAllGames") {
+    const result = await prisma.game.updateMany({
+      where: { weekId: body.weekId, lockedAt: null },
+      data: { lockedAt: new Date() },
+    });
+    const week = await prisma.week.update({
+      where: { id: body.weekId },
+      data: { lockedForSubmission: true },
+      include: { season: true },
+    });
+    const allGames = await prisma.game.findMany({
+      where: { weekId: body.weekId },
+      select: { id: true },
+    });
+    await createMissedPicksForLockedGames(body.weekId, allGames.map((g) => g.id), week.season.leagueId);
+    await logAdminAction(adminName, "LOCK_ALL_GAMES", {
+      weekId: body.weekId,
+      weekLabel: week.label,
+      gamesLocked: result.count,
+    });
+    return NextResponse.json({ week, locked: result.count });
+  }
+
+  if (body.action === "unlockGames") {
+    const result = await prisma.game.updateMany({
+      where: { weekId: body.weekId, lockedAt: { not: null } },
+      data: { lockedAt: null },
+    });
+    await logAdminAction(adminName, "UNLOCK_GAMES", {
+      weekId: body.weekId,
+      gamesUnlocked: result.count,
+    });
+    return NextResponse.json({ unlocked: result.count });
   }
 
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });

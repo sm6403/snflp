@@ -16,6 +16,7 @@ interface AppSettings {
   autoResultsHourUtc: number;
   autoResultsMinuteUtc: number;
   autoResultsAdvanceWeek: boolean;
+  autoLockMode: string;
 }
 
 interface GlobalSettings {
@@ -323,6 +324,12 @@ export function AdminSettingsContent() {
     await patchSettings({ autoResultsAdvanceWeek: newVal });
   }
 
+  async function handleAutoLockModeChange(mode: string) {
+    if (saving) return;
+    setSettings((s) => s ? { ...s, autoLockMode: mode } : s);
+    await patchSettings({ autoLockMode: mode });
+  }
+
   async function handleSaveAutoSchedule(e: React.FormEvent) {
     e.preventDefault();
     setAutoSchedSaving(true);
@@ -506,6 +513,37 @@ export function AdminSettingsContent() {
             </div>
 
             {saved && <p className="text-sm text-green-400">Settings saved.</p>}
+
+            {/* Kickoff auto-lock */}
+            <div className="rounded-lg border border-zinc-800 bg-zinc-800/50 p-6">
+              <h3 className="font-medium text-zinc-100">Kickoff Auto-Lock</h3>
+              <p className="mt-1 text-sm text-zinc-400">
+                Automatically lock picks based on game kickoff times. Manual locks (Lock Week / scheduled lock time) always take precedence.
+              </p>
+              <div className="mt-4 space-y-3">
+                {[
+                  { value: "off", label: "Off", desc: "Picks are only locked manually or via the scheduled lock time." },
+                  { value: "all_before_first", label: "Lock Before First Kickoff", desc: "All picks lock 5 minutes before the earliest game of the week." },
+                  { value: "thursday_split", label: "Thursday Split", desc: "Thursday night picks lock before Thursday kickoff. All remaining picks lock before Sunday's first game." },
+                ].map((opt) => (
+                  <label key={opt.value} className="flex cursor-pointer items-start gap-3 rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-3 transition-colors hover:border-zinc-600">
+                    <input
+                      type="radio"
+                      name="autoLockMode"
+                      value={opt.value}
+                      checked={(settings?.autoLockMode ?? "off") === opt.value}
+                      onChange={() => handleAutoLockModeChange(opt.value)}
+                      disabled={saving}
+                      className="mt-0.5 h-4 w-4 border-zinc-600 bg-zinc-900 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-zinc-900"
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-zinc-200">{opt.label}</p>
+                      <p className="mt-0.5 text-xs text-zinc-500">{opt.desc}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
 
             {/* Email reminders */}
             <div className="rounded-lg border border-zinc-800 bg-zinc-800/50 p-6 space-y-5">

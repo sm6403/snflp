@@ -65,6 +65,7 @@ model LeagueSettings {
   autoResultsHourUtc      Int     @default(12)
   autoResultsMinuteUtc    Int     @default(0)
   autoResultsAdvanceWeek  Boolean @default(false)
+  autoLockMode            String  @default("off")  // "off" | "all_before_first" | "thursday_split"
 
   league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
 }
@@ -195,6 +196,7 @@ model Game {
   winnerId   String?
   isTie      Boolean   @default(false)
   gameTime   DateTime?
+  lockedAt   DateTime?   // Per-game lock — set by auto-lock cron or admin manual button
   week       Week      @relation(fields: [weekId], references: [id])
   homeTeam   Team      @relation("HomeTeam", fields: [homeTeamId], references: [id])
   awayTeam   Team      @relation("AwayTeam", fields: [awayTeamId], references: [id])
