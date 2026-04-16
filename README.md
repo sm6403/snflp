@@ -272,7 +272,8 @@ Seasons are scoped to their league and are not visible across leagues.
 Each season contains weeks. Weeks hold individual games and track pick submissions.
 
 - **Current week** — only one week per season can be current at a time. This is the week users are picking against.
-- **Lock week** — prevents new pick submissions. Can be done manually or automatically (with timed auto-locking).
+- **Lock week** — prevents new pick submissions. Can be done manually (instant or scheduled) or automatically via Kickoff Auto-Lock (see [Settings](#settings)).
+- **Game-level locking** — the Admin Picks page has buttons to lock only the Thursday game(s), lock all games at once, or unlock all games individually without affecting the overall week lock state.
 - **Confirm results** — after games finish, enter results to score all picks and update the leaderboard.
 
 #### Importing schedules from ESPN
@@ -330,9 +331,33 @@ Settings are per-league. Superadmins see all options; league admins see only the
 
 Toggle whether new sign-ups start as disabled (must be manually activated) or active (can log in immediately). See [Users](#users) above.
 
+> This is a **superadmin-only, global setting** — it applies across all leagues simultaneously and is only visible when logged in as the superadmin.
+
 #### Favourite Team Picks
 
 Bulk lock or unlock all users' ability to change their favourite team. Locked users see a 🔒 badge on their team picker.
+
+#### Kickoff Auto-Lock
+
+Controls whether picks are locked automatically based on game kick-off times, without needing to press the manual lock button.
+
+Three modes are available:
+
+- **Off** — picks are only locked manually (instant lock button or scheduled lock time). This is the default.
+- **Lock Before First Kickoff** — all picks for the week lock 5 minutes before the earliest game kick-off.
+- **Thursday Split** — Thursday game picks lock 5 minutes before Thursday's kick-off; all remaining picks lock 5 minutes before the first Sunday game. This allows users to still submit Sunday picks after the Thursday game has started.
+
+The auto-lock cron runs every minute. Manual locks (`lockAt` scheduled time or the instant Lock Week button) always take precedence — if either is set, auto-lock skips that week.
+
+**Favourite team auto-fill:** When Thursday games lock and a user hasn't submitted picks yet, if their favourite team is playing in a Thursday game their pick for that game is automatically filled with their favourite team. This means the existing favourite team bonus still applies to their Thursday game even if they missed the deadline.
+
+**Game-level lock buttons** on the Admin Picks page provide manual control without relying on timers:
+
+- **Lock Thursday Night** — immediately locks the Thursday game(s) and creates any missed picks.
+- **Lock All Games** — locks all remaining games and closes the week.
+- **Unlock All Games** — clears all game-level locks (useful for testing or corrections).
+
+Users see a lock time label on both the picks page header and the dashboard widget so they know when their picks will close. After Thursday games lock, a "Thursday picks locked" note appears on the dashboard next to the Go to Picks button.
 
 #### Email Reminders
 
