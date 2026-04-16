@@ -379,13 +379,113 @@ A chronological log of all admin actions — week locks, result confirmations, p
 
 ## User Features
 
-### Team Colour Theme
+### Registration & Sign-in
 
-**Settings → Team Colour Theme**
+Users register at `/signup` with a name, email address, and password. Once signed in they land on the dashboard. If the league admin has enabled **New Account Registration approval**, new accounts start disabled and must be activated by the admin before the user can access the app.
 
-Users can apply their favourite team's official colours as the app accent theme. All accent elements — buttons, active nav states, toggles, focus rings — shift to the team's primary colour simultaneously.
+To join a league, users enter the 6-character invite code shared by the admin. If the league requires approval, a "Request Pending" message is shown until the admin approves.
 
-- Go to **Settings** (linked from the dashboard nav).
-- The **Team Colour Theme** section shows a colour swatch for the current favourite team. Click **Set Theme** to apply it, or **Reset Theme** to return to the default indigo accent.
-- The theme is stored per-user and applied instantly on every page load with no flash — the colour is set server-side via a cookie before the page renders.
-- All 32 NFL teams are supported, with dark-background-safe colour choices for teams with very dark primary colours.
+---
+
+### Dashboard
+
+The dashboard is the home screen after sign-in. It shows:
+
+- **Weekly Picks card** — the current week label and submission status. Status pills indicate whether picks are waiting, submitted, unlocked by an admin, or closed. A lock time label shows when picks will close (e.g. "Locks Thu, Sep 5 at 8:15 PM") when a scheduled or auto-lock is set. A "Thursday picks locked" note appears next to the Go to Picks button when Thursday games have kicked off but Sunday picks are still open.
+- **Season stats** — overall correct/wrong counts, percentage, and best week, updated as results are confirmed.
+- **Season rules** — a summary of which rules are active for the current season (favourite team bonus, timed locking, Last Man Standing).
+- **Favourite team picker** — set or change your favourite NFL team. Used for pick pre-selection and the bonus win rule. Admins can lock this to prevent changes mid-season.
+- **Week history** — a list of all weeks in the season with scores for confirmed weeks and links to view picks or results.
+
+---
+
+### Weekly Picks (`/picks`)
+
+The main picking interface. Users select one team per game for every matchup in the current week, then submit.
+
+#### Picking
+
+- Each game shows the away team and home team as selectable buttons with the team logo, abbreviation, and current season record (W-L-T).
+- If the user has a favourite team set, their team's game is pre-selected with a yellow border and ⭐ icon. They can override this before submitting.
+- **Recent form strips** — each team button shows a strip of recent results (colour-coded rings: green win, red loss, amber draw, grey BYE) so users can assess form at a glance.
+- Picks can be changed freely until submitted. Once submitted and locked, they cannot be changed unless an admin unlocks them.
+
+#### Layouts
+
+A toggle in the header switches between two layouts, with the preference saved in the browser:
+
+- **Full** — large cards with centred logos and clear labels. Best on desktop.
+- **Compact** — single-row layout with smaller logos. Better on mobile or when there are many games.
+
+#### Locking
+
+Games can be locked in several ways. Once a game is locked, the buttons are disabled and the game shows an ⏰ badge.
+
+- **Timed auto-locking** — individual games lock at their kick-off time.
+- **Kickoff auto-lock** (league setting) — all picks, or just Thursday picks, lock automatically before kick-off (see [Kickoff Auto-Lock](#kickoff-auto-lock)).
+- **Manual lock** — admin locks the week instantly or via a scheduled time.
+
+An auto-lock countdown banner appears above the games when a timed lock is approaching.
+
+The submit button is disabled until all unlocked games have a selection. If some games are already locked, only the remaining open games need to be picked.
+
+#### Results view
+
+Once the admin confirms results, each game card updates to show the winner. The user's picks are graded:
+
+- **Green** — correct pick.
+- **Red** — wrong pick.
+- **Amber** — draw (both teams credited).
+- **Purple** — favourite team bonus win (rule must be enabled): the user picked their favourite team and it lost, but the pick still counts as correct.
+
+A score summary at the top shows the overall result (e.g. "12 / 14 correct — 86%").
+
+#### Historical picks (`/picks/[weekId]`)
+
+Any past week can be viewed at its own URL. The same interface is shown in read-only mode. Picks from users who haven't submitted show a "You didn't submit picks for this week" message. Admins can share a link with `?userId=` to view another player's picks.
+
+---
+
+### Leaderboard (`/leaderboard`)
+
+The leaderboard has three tabs.
+
+#### Season tab
+
+The full-season standings table ranked by correct picks. Shows each player's correct/graded count, percentage (colour-coded green/yellow/red), and position change since the previous confirmed week (↑ / ↓ / —).
+
+A multi-week rank chart plots each player's position over the season. The current user's line is highlighted.
+
+If the season uses divisions, a toggle switches between the overall standings and a divisions view that re-ranks players within their division.
+
+#### Weekly tab
+
+Pick a specific confirmed week from the dropdown to see that week's standalone rankings. Same table and divisions toggle as the season tab.
+
+#### Last Man Standing tab
+
+Only visible when the LMS rule is enabled. Shows each player's weekly team picks as a row of logos with colour-coded results (green win, red loss, amber pending, grey missed). Eliminated players are labelled with the week they went out. Active players are ranked above eliminated ones.
+
+---
+
+### Last Man Standing (LMS)
+
+When the LMS rule is enabled for a season, an extra pick section appears below the regular game picks on the picks page.
+
+- Each week, pick one NFL team to win their game.
+- You cannot reuse a team you have already picked earlier in the season (previously used teams are shown greyed out).
+- Teams on a BYE week are unavailable.
+- If your picked team loses or ties, you are eliminated.
+- The LMS leaderboard tab tracks everyone's picks and shows who is still active.
+
+---
+
+### Settings (`/settings`)
+
+The settings page lets users manage their account:
+
+- **Display name (alias)** — the name shown on leaderboards. Separate from the account name used at sign-up.
+- **Email address** — update the login email.
+- **Password** — change password (requires current password; new password minimum 8 characters).
+- **Email reminders** — opt in or out of the weekly reminder email sent before the picks deadline.
+- **Team Colour Theme** — apply your favourite team's official colours as the app accent. All accent elements (buttons, toggles, nav active states, focus rings) shift to the team's primary colour. The theme is stored per-user and applied server-side via a cookie so there is no colour flash on page load. All 32 NFL teams are supported, with dark-background-safe colour choices for teams with very dark primaries. Click **Reset Theme** to return to the default indigo accent.
