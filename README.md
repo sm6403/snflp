@@ -14,6 +14,7 @@ Built with **Next.js 16 (App Router)**, **React 19**, **Prisma 7**, **Neon Postg
 - [Email Setup (Resend)](#email-setup-resend)
 - [Deployment (Vercel)](#deployment-vercel)
 - [Superadmin Guide](#superadmin-guide)
+- [User Features](#user-features)
 
 ---
 
@@ -373,3 +374,18 @@ Users see a lock time label on both the picks page header and the dashboard widg
 **Dashboard → Activity**
 
 A chronological log of all admin actions — week locks, result confirmations, pick edits, user changes, and more. Useful for auditing.
+
+---
+
+## User Features
+
+### Team Colour Theme
+
+**Settings → Team Colour Theme**
+
+Users can apply their favourite team's official colours as the app accent theme. All accent elements — buttons, active nav states, toggles, focus rings — shift to the team's primary colour simultaneously.
+
+- Go to **Settings** (linked from the dashboard nav).
+- The **Team Colour Theme** section shows a colour swatch for the current favourite team. Click **Set Theme** to apply it, or **Reset Theme** to return to the default indigo accent.
+- The theme is stored per-user and applied instantly on every page load with no flash — the colour is set server-side via a cookie before the page renders.
+- All 32 NFL teams are supported, with dark-background-safe colour choices for teams with very dark primary colours.
